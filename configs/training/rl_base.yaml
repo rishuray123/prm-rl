@@ -16,7 +16,6 @@ report_to:
 
 # GRPO-specific
 num_generations: 4
-max_prompt_length: 512
 max_completion_length: 512
 temperature: 0.9
 top_p: 1.0

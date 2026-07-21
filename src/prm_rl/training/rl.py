@@ -71,7 +71,10 @@ def run_rl(cfg: DictConfig) -> str:
         seed=cfg.get("seed", 0),
         # GRPO-specific
         num_generations=cfg.training.get("num_generations", 4),
-        max_prompt_length=cfg.training.get("max_prompt_length", 512),
+        # NOTE: trl 1.x dropped `max_prompt_length` from GRPOConfig; the
+        # tokenizer's built-in truncation handles prompt length now. Long
+        # prompts should be truncated in the dataset before it hits the
+        # trainer if you need a hard cap.
         max_completion_length=cfg.training.get("max_completion_length", 512),
         beta=cfg.training.get("beta", 0.04),  # KL coefficient (Arm 7)
         temperature=cfg.training.get("temperature", 0.9),
