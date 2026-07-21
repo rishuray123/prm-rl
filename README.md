@@ -1,4 +1,6 @@
-# wordwave / prm_rl
+# prm-rl
+
+[![Open Colab quickstart](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/rishuray123/prm-rl/blob/main/notebooks/quickstart_colab.ipynb)
 
 Experimental framework for investigating **reward hacking in process-based RL** for
 math reasoning, built on top of Hugging Face `transformers`, `datasets`, and `trl`.
