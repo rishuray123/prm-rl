@@ -37,18 +37,24 @@ def _project(example: dict) -> dict:
     }
 
 
+# Canonical HF repo id. Older `huggingface_hub` accepted the bare "gsm8k"
+# alias; recent versions require `namespace/name`.
+DATASET_REPO_ID = "openai/gsm8k"
+
+
 def load_gsm8k(
     split: str = "train",
     subset: str = "main",
     cache_dir: Optional[str] = None,
     n: Optional[int] = None,
     seed: int = 0,
+    repo_id: str = DATASET_REPO_ID,
 ) -> Dataset:
     """Load a projected GSM8K split.
 
     Columns after projection: `prompt, question, solution, answer`.
     """
-    ds = load_dataset("gsm8k", subset, split=split, cache_dir=cache_dir)
+    ds = load_dataset(repo_id, subset, split=split, cache_dir=cache_dir)
     ds = ds.map(_project, remove_columns=[c for c in ds.column_names if c not in {"question", "answer"}])
     ds = ds.filter(lambda ex: ex["answer"] != "")
     if n is not None:
