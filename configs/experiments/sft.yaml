@@ -1,0 +1,29 @@
+# Stage-1 SFT config (produces the reference SFT policy every RL arm starts from).
+
+seed: 42
+run_name: sft_qwen_0_5b
+output_dir: outputs/sft
+
+model:
+  name: Qwen/Qwen2.5-0.5B-Instruct
+  dtype: bf16
+  device_map: auto
+
+data:
+  golden_path: data/golden
+
+training:
+  num_train_epochs: 2
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 4
+  learning_rate: 2.0e-5
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.03
+  logging_steps: 10
+  save_strategy: epoch
+  save_total_limit: 2
+  bf16: true
+  max_seq_length: 1024
+  packing: false
+  gradient_checkpointing: true
+  report_to: [none]

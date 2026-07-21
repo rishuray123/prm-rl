@@ -1,0 +1,26 @@
+# PRM training config.
+# We use a small DeBERTa classifier (2 labels: incorrect / correct step).
+
+seed: 42
+run_name: prm_deberta_base
+output_dir: outputs/prm
+
+model:
+  name: microsoft/deberta-v3-base
+
+data:
+  golden_path: data/golden
+  val_size: 0.05
+
+training:
+  num_train_epochs: 3
+  per_device_train_batch_size: 16
+  per_device_eval_batch_size: 32
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.06
+  logging_steps: 20
+  bf16: true
+  max_seq_length: 1024
+  gradient_checkpointing: false
+  report_to: [none]

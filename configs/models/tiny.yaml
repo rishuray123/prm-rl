@@ -1,0 +1,6 @@
+# Ultra-tiny model preset — Colab smoke tests
+name: HuggingFaceTB/SmolLM2-135M-Instruct
+dtype: bf16
+device_map: auto
+attn_implementation: null
+load_in_4bit: false

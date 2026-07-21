@@ -1,0 +1,5 @@
+name: google/gemma-2-2b-it
+dtype: bf16
+device_map: auto
+attn_implementation: sdpa
+load_in_4bit: false

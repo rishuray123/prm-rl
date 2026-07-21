@@ -1,0 +1,53 @@
+# Arm 4 — Contradiction-aware reward.
+# Layered on top of outcome + naive process to prevent free-riding.
+
+seed: 42
+run_name: arm4_contradiction
+output_dir: outputs/arm4_contradiction
+
+model: { name: Qwen/Qwen2.5-0.5B-Instruct, dtype: bf16, device_map: auto }
+
+data:
+  split: train
+  n: 2000
+  golden_path: data/golden
+
+training:
+  num_train_epochs: 1
+  max_steps: 500
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 4
+  learning_rate: 5.0e-6
+  logging_steps: 10
+  save_strategy: steps
+  save_steps: 200
+  save_total_limit: 2
+  bf16: true
+  gradient_checkpointing: true
+  num_generations: 4
+  max_prompt_length: 512
+  max_completion_length: 512
+  temperature: 0.9
+  beta: 0.04
+  report_to: [none]
+
+rewards:
+  - name: outcome
+    weight: 1.0
+  - name: naive_process
+    weight: 0.5
+    prm_path: outputs/prm
+  - name: contradiction
+    weight: 0.5
+    nli_model: MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli
+    device: cuda
+
+eval:
+  policy_path: outputs/arm4_contradiction
+  prm_path: outputs/prm
+  traps_path: data/traps/trap_examples.json
+  n_test: 200
+  gen_batch_size: 8
+  max_new_tokens: 512
+  temperature: 0.0
+  verbosity_baseline: 150.0
