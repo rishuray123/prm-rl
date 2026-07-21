@@ -42,9 +42,11 @@ def load_policy_and_tokenizer(
         except ImportError as e:  # pragma: no cover
             raise RuntimeError("bitsandbytes required for quantized load") from e
 
+    # transformers >=5 renamed `torch_dtype` to `dtype`. `torch_dtype` still
+    # works with a deprecation warning; use the new name so we stay quiet.
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=_resolve_dtype(dtype),
+        dtype=_resolve_dtype(dtype),
         attn_implementation=attn_implementation,
         trust_remote_code=trust_remote_code,
         device_map=device_map,

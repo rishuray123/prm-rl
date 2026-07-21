@@ -60,7 +60,10 @@ def run_prm(cfg: DictConfig) -> str:
         tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForSequenceClassification.from_pretrained(cfg.model.name, num_labels=2)
 
-    tok_fn = _tokenize(tokenizer, cfg.training.get("max_seq_length", 1024))
+    tok_fn = _tokenize(
+        tokenizer,
+        cfg.training.get("max_length", cfg.training.get("max_seq_length", 1024)),
+    )
     train = prm_ds["train"].map(tok_fn, batched=True, remove_columns=prm_ds["train"].column_names)
     val = prm_ds["test"].map(tok_fn, batched=True, remove_columns=prm_ds["test"].column_names)
 
@@ -86,12 +89,13 @@ def run_prm(cfg: DictConfig) -> str:
         seed=cfg.get("seed", 0),
         run_name=cfg.get("run_name"),
     )
+    # transformers>=5 renamed `tokenizer` -> `processing_class` on Trainer.
     trainer = Trainer(
         model=model,
         args=args,
         train_dataset=train,
         eval_dataset=val,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=DataCollatorWithPadding(tokenizer),
         compute_metrics=_compute_metrics,
     )

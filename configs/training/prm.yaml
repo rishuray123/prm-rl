@@ -6,7 +6,7 @@ weight_decay: 0.01
 warmup_ratio: 0.06
 logging_steps: 20
 bf16: true
-max_seq_length: 1024
+max_length: 1024
 gradient_checkpointing: false
 report_to:
   - none

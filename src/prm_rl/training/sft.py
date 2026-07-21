@@ -60,7 +60,7 @@ def run_sft(cfg: DictConfig) -> str:
         save_strategy=cfg.training.get("save_strategy", "epoch"),
         save_total_limit=cfg.training.get("save_total_limit", 2),
         bf16=cfg.training.get("bf16", True),
-        max_seq_length=cfg.training.get("max_seq_length", 1024),
+        max_length=cfg.training.get("max_length", cfg.training.get("max_seq_length", 1024)),
         packing=cfg.training.get("packing", False),
         gradient_checkpointing=cfg.training.get("gradient_checkpointing", True),
         report_to=list(cfg.training.get("report_to", ["none"])),
@@ -69,9 +69,10 @@ def run_sft(cfg: DictConfig) -> str:
         dataset_text_field="text",
     )
 
+    # transformers>=5 / trl>=0.13 renamed `tokenizer` -> `processing_class`.
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         args=sft_cfg,
         train_dataset=train,
     )
