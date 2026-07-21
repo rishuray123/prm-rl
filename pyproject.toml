@@ -3,13 +3,13 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "wordwave"
+name = "prm-rl"
 version = "0.1.0"
 description = "Experimental framework for reward hacking in process-based RL for math reasoning."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "wordwave" }]
+authors = [{ name = "prm-rl" }]
 
 dependencies = [
     "accelerate>=0.33",
@@ -37,19 +37,19 @@ flash = ["flash-attn>=2.6 ; platform_system != 'Darwin'"]
 vllm = ["vllm>=0.5"]
 
 [project.scripts]
-wordwave-prepare-gsm8k = "wordwave.scripts.prepare_gsm8k:main"
-wordwave-build-golden  = "wordwave.scripts.build_golden:main"
-wordwave-build-prm     = "wordwave.scripts.build_prm_data:main"
-wordwave-train-sft     = "wordwave.scripts.train_sft:main"
-wordwave-train-prm     = "wordwave.scripts.train_prm:main"
-wordwave-train-rl      = "wordwave.scripts.train_rl:main"
-wordwave-evaluate      = "wordwave.scripts.evaluate:main"
+prmrl-prepare-gsm8k = "prm_rl.scripts.prepare_gsm8k:main"
+prmrl-build-golden  = "prm_rl.scripts.build_golden:main"
+prmrl-build-prm     = "prm_rl.scripts.build_prm_data:main"
+prmrl-train-sft     = "prm_rl.scripts.train_sft:main"
+prmrl-train-prm     = "prm_rl.scripts.train_prm:main"
+prmrl-train-rl      = "prm_rl.scripts.train_rl:main"
+prmrl-evaluate      = "prm_rl.scripts.evaluate:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-"wordwave" = ["py.typed"]
+"prm_rl" = ["py.typed"]
 
 [tool.ruff]
 line-length = 100

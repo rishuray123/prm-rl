@@ -1,6 +1,6 @@
 #!/bin/bash
 # One-time environment bootstrap for TACC Vista (login node).
-# Creates a venv on $SCRATCH, installs wordwave in editable mode, and sets
+# Creates a venv on $SCRATCH, installs prm_rl in editable mode, and sets
 # HF caches to live on $SCRATCH so multiple jobs share downloads.
 
 set -euo pipefail
@@ -8,7 +8,7 @@ set -euo pipefail
 module reset
 module load gcc cuda python3
 
-VENV="${VENV:-$SCRATCH/venvs/wordwave}"
+VENV="${VENV:-$SCRATCH/venvs/prm-rl}"
 HF_CACHE_ROOT="${HF_CACHE_ROOT:-$SCRATCH/hf-cache}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -34,7 +34,7 @@ export HF_HOME="$HF_CACHE_ROOT"
 export HF_DATASETS_CACHE="$HF_CACHE_ROOT/datasets"
 export TRANSFORMERS_CACHE="$HF_CACHE_ROOT/transformers"
 export TOKENIZERS_PARALLELISM=false
-export WORDWAVE_HOME="$REPO_ROOT"
+export PRMRL_HOME="$REPO_ROOT"
 EOF
 
 echo

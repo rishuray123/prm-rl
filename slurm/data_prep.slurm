@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J ww-data
+#SBATCH -J pr-data
 #SBATCH -o logs/data-%j.out
 #SBATCH -e logs/data-%j.err
 #SBATCH -p gh-dev
@@ -10,8 +10,8 @@
 set -euo pipefail
 source slurm/_common.sh
 
-python -m wordwave.scripts.prepare_gsm8k --out data/gsm8k
-python -m wordwave.scripts.build_golden  --n 5000 --out data/golden
-python -m wordwave.scripts.build_prm_data --golden data/golden --out data/prm
+python -m prm_rl.scripts.prepare_gsm8k --out data/gsm8k
+python -m prm_rl.scripts.build_golden  --n 5000 --out data/golden
+python -m prm_rl.scripts.build_prm_data --golden data/golden --out data/prm
 
 echo "Data prep complete."

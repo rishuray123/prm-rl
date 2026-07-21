@@ -1,7 +1,7 @@
 """Train the Process Reward Model.
 
 We frame the PRM as a binary sequence classifier trained on the
-step-level dataset produced by `wordwave.data.build_prm_dataset` — this
+step-level dataset produced by `prm_rl.data.build_prm_dataset` — this
 is a stock HF `Trainer` setup, no custom RL loop required.
 """
 from __future__ import annotations

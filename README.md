@@ -19,14 +19,14 @@ prm_rl/
 │   ├── models/*.yaml                   # Model presets (tiny → 7B)
 │   ├── training/{sft,prm,rl_base}.yaml # Trainer hyperparams
 │   └── experiments/arm{1..7}.yaml      # One YAML per experimental arm
-├── src/wordwave/
+├── src/prm_rl/
 │   ├── data/     # GSM8K, golden dataset, PRM dataset builders
 │   ├── models/   # Thin wrappers around AutoModel*, PRM loader, NLI loader
 │   ├── rewards/  # One file per reward function (Arms 1–6) + registry
 │   ├── training/ # sft.py / prm_train.py / rl.py — each is <100 LOC of TRL glue
 │   ├── evaluation/  # accuracy, exploit, verbosity, CCT, CMA, EST, CRHS
 │   └── utils/    # step splitters, sandbox helpers, logging
-│   └── scripts/  # CLI entry points (`python -m wordwave.scripts.*`)
+│   └── scripts/  # CLI entry points (`python -m prm_rl.scripts.*`)
 ├── slurm/        # TACC Vista Slurm scripts for the `gh` and `gh-dev` queues
 ├── data/traps/   # Trap scenarios for measuring specification gaming
 └── tests/        # pytest smoke tests for verifier + rewards + step parser
@@ -60,17 +60,17 @@ prm_rl/
 pip install -e ".[dev]"
 
 # 1. Prepare GSM8K + a tiny golden subset
-python -m wordwave.scripts.prepare_gsm8k --out data/gsm8k
-python -m wordwave.scripts.build_golden  --split train --n 200 --out data/golden
+python -m prm_rl.scripts.prepare_gsm8k --out data/gsm8k
+python -m prm_rl.scripts.build_golden  --split train --n 200 --out data/golden
 
 # 2. SFT a tiny model
-python -m wordwave.scripts.train_sft --config configs/experiments/arm1_outcome.yaml
+python -m prm_rl.scripts.train_sft --config configs/experiments/arm1_outcome.yaml
 
 # 3. RL with an arm
-python -m wordwave.scripts.train_rl  --config configs/experiments/arm2_naive_process.yaml
+python -m prm_rl.scripts.train_rl  --config configs/experiments/arm2_naive_process.yaml
 
 # 4. Evaluate
-python -m wordwave.scripts.evaluate  --config configs/experiments/arm2_naive_process.yaml
+python -m prm_rl.scripts.evaluate  --config configs/experiments/arm2_naive_process.yaml
 ```
 
 ## Quick start (TACC Vista)

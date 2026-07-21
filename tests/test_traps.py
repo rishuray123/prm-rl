@@ -1,4 +1,4 @@
-from wordwave.evaluation.traps import exploit_rate, load_trap_scenarios
+from prm_rl.evaluation.traps import exploit_rate, load_trap_scenarios
 
 
 def test_load_trap_scenarios(tmp_path):

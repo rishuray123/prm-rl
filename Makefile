@@ -33,21 +33,21 @@ fmt:
 	ruff format src tests
 
 data:
-	$(PYTHON) -m wordwave.scripts.prepare_gsm8k --out data/gsm8k
-	$(PYTHON) -m wordwave.scripts.build_golden  --n 5000 --out data/golden
-	$(PYTHON) -m wordwave.scripts.build_prm_data --golden data/golden --out data/prm
+	$(PYTHON) -m prm_rl.scripts.prepare_gsm8k --out data/gsm8k
+	$(PYTHON) -m prm_rl.scripts.build_golden  --n 5000 --out data/golden
+	$(PYTHON) -m prm_rl.scripts.build_prm_data --golden data/golden --out data/prm
 
 sft:
-	$(PYTHON) -m wordwave.scripts.train_sft --config configs/experiments/sft.yaml
+	$(PYTHON) -m prm_rl.scripts.train_sft --config configs/experiments/sft.yaml
 
 prm:
-	$(PYTHON) -m wordwave.scripts.train_prm --config configs/experiments/prm.yaml
+	$(PYTHON) -m prm_rl.scripts.train_prm --config configs/experiments/prm.yaml
 
 rl:
-	$(PYTHON) -m wordwave.scripts.train_rl --config $(CONFIG)
+	$(PYTHON) -m prm_rl.scripts.train_rl --config $(CONFIG)
 
 eval:
-	$(PYTHON) -m wordwave.scripts.evaluate --config $(CONFIG)
+	$(PYTHON) -m prm_rl.scripts.evaluate --config $(CONFIG)
 
 sweep:
 	bash slurm/sweep_all_arms.sh

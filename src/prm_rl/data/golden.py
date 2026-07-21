@@ -53,7 +53,7 @@ def build_golden_dataset(
     Parameters
     ----------
     gsm8k_split : Dataset
-        Output of `wordwave.data.gsm8k.load_gsm8k`.
+        Output of `prm_rl.data.gsm8k.load_gsm8k`.
     strategy : {"gsm8k_native", "teacher", "verifier"}
     teacher_generate : callable
         `prompt -> list[str]` of k candidate completions. Required for

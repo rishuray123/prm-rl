@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J ww-eval
+#SBATCH -J pr-eval
 #SBATCH -o logs/eval-%j.out
 #SBATCH -e logs/eval-%j.err
 #SBATCH -p gh-dev
@@ -13,4 +13,4 @@ CONFIG="${1:?usage: sbatch slurm/eval.slurm <config.yaml> [overrides ...]}"
 shift || true
 source slurm/_common.sh
 
-python -m wordwave.scripts.evaluate --config "$CONFIG" --override "$@"
+python -m prm_rl.scripts.evaluate --config "$CONFIG" --override "$@"

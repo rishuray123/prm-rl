@@ -33,7 +33,7 @@ def scrubbed_env(extra: dict[str, str] | None = None) -> dict[str, str]:
 
 
 @contextmanager
-def sandbox_cwd(prefix: str = "ww-eval-") -> Iterator[Path]:
+def sandbox_cwd(prefix: str = "prmrl-eval-") -> Iterator[Path]:
     tmp = Path(tempfile.mkdtemp(prefix=prefix))
     try:
         yield tmp

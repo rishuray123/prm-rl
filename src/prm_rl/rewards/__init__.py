@@ -20,12 +20,12 @@ RewardFn = Callable[..., list[float]]
 
 # Map name -> (module_path, attribute) for lazy resolution.
 _FACTORIES: dict[str, tuple[str, str]] = {
-    "outcome":            ("wordwave.rewards.outcome",         "outcome_reward"),
-    "naive_process":      ("wordwave.rewards.process",         "make_naive_process_reward"),
-    "prefix_consistency": ("wordwave.rewards.prefix",          "make_prefix_consistency_reward"),
-    "contradiction":      ("wordwave.rewards.contradiction",   "make_contradiction_reward"),
-    "counterfactual":     ("wordwave.rewards.counterfactual",  "make_counterfactual_reward"),
-    "hybrid":             ("wordwave.rewards.hybrid",          "make_hybrid_reward"),
+    "outcome":            ("prm_rl.rewards.outcome",         "outcome_reward"),
+    "naive_process":      ("prm_rl.rewards.process",         "make_naive_process_reward"),
+    "prefix_consistency": ("prm_rl.rewards.prefix",          "make_prefix_consistency_reward"),
+    "contradiction":      ("prm_rl.rewards.contradiction",   "make_contradiction_reward"),
+    "counterfactual":     ("prm_rl.rewards.counterfactual",  "make_counterfactual_reward"),
+    "hybrid":             ("prm_rl.rewards.hybrid",          "make_hybrid_reward"),
 }
 
 

@@ -1,8 +1,8 @@
-from wordwave.evaluation.behavioral import behavioral_scores
-from wordwave.evaluation.cma import causal_mediation
-from wordwave.evaluation.crhs import composite_reward_hacking_score
-from wordwave.evaluation.faithfulness import phi_coefficient
-from wordwave.evaluation.metrics import final_answer_accuracy
+from prm_rl.evaluation.behavioral import behavioral_scores
+from prm_rl.evaluation.cma import causal_mediation
+from prm_rl.evaluation.crhs import composite_reward_hacking_score
+from prm_rl.evaluation.faithfulness import phi_coefficient
+from prm_rl.evaluation.metrics import final_answer_accuracy
 
 
 def test_final_answer_accuracy():

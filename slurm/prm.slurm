@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J ww-prm
+#SBATCH -J pr-prm
 #SBATCH -o logs/prm-%j.out
 #SBATCH -e logs/prm-%j.err
 #SBATCH -p gh
@@ -13,4 +13,4 @@ CONFIG="${1:?usage: sbatch slurm/prm.slurm <config.yaml> [overrides ...]}"
 shift || true
 source slurm/_common.sh
 
-python -m wordwave.scripts.train_prm --config "$CONFIG" --override "$@"
+python -m prm_rl.scripts.train_prm --config "$CONFIG" --override "$@"

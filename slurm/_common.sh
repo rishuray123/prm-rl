@@ -4,7 +4,7 @@
 module reset
 module load gcc cuda python3
 
-VENV="${VENV:-$SCRATCH/venvs/wordwave}"
+VENV="${VENV:-$SCRATCH/venvs/prm-rl}"
 if [[ ! -d "$VENV" ]]; then
     echo "ERROR: venv $VENV not found. Run slurm/setup_env.sh first." >&2
     exit 1
@@ -20,7 +20,7 @@ export WANDB_MODE=${WANDB_MODE:-disabled}
 export OMP_NUM_TPHREADS=${OMP_NUM_TPHREADS:-8}
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-8}
 
-cd "${WORDWAVE_HOME:-$SLURM_SUBMIT_DIR}"
+cd "${PRMRL_HOME:-$SLURM_SUBMIT_DIR}"
 mkdir -p logs
 
 echo "----------------------------------------"

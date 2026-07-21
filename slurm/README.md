@@ -23,7 +23,7 @@ bash slurm/setup_env.sh
 `setup_env.sh` will:
 
 1. `module load gcc cuda python3` (the modules Vista publishes for GH nodes).
-2. Create a venv under `$SCRATCH/venvs/wordwave` (never in `$HOME`).
+2. Create a venv under `$SCRATCH/venvs/prm-rl` (never in `$HOME`).
 3. `pip install -e .` for this repo.
 4. Cache HF assets under `$SCRATCH/hf-cache` so different jobs share downloads.
 
@@ -31,7 +31,7 @@ bash slurm/setup_env.sh
 
 ```bash
 idev -p gh-dev -N 1 -n 1 -t 01:00:00
-source $SCRATCH/venvs/wordwave/bin/activate
+source $SCRATCH/venvs/prm_rl/bin/activate
 python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 

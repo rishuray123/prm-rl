@@ -1,4 +1,4 @@
-from wordwave.rewards import REGISTRY, build_rewards
+from prm_rl.rewards import REGISTRY, build_rewards
 
 
 def test_registry_names():

@@ -2,10 +2,10 @@
 
 Model-backed rewards (naive_process, prefix_consistency, contradiction,
 hybrid) are exercised in `test_rewards_integration.py` behind a
-`WW_RUN_HEAVY` env-flag so CI stays fast.
+`PRMRL_RUN_HEAVY` env-flag so CI stays fast.
 """
-from wordwave.rewards.counterfactual import make_counterfactual_reward
-from wordwave.rewards.outcome import outcome_reward
+from prm_rl.rewards.counterfactual import make_counterfactual_reward
+from prm_rl.rewards.outcome import outcome_reward
 
 
 def test_outcome_reward_correct_and_wrong():

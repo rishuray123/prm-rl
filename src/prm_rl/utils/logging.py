@@ -14,7 +14,7 @@ def setup_logging(level: str | int = "INFO") -> None:
         force=True,
     )
     for noisy in ("urllib3", "filelock", "datasets", "transformers"):
-        logging.getLogger(noisy).setLevel(os.environ.get("WW_HF_LOGLEVEL", "WARNING"))
+        logging.getLogger(noisy).setLevel(os.environ.get("PRMRL_HF_LOGLEVEL", "WARNING"))
 
 
 def get_logger(name: str) -> logging.Logger:

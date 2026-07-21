@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J ww-sft
+#SBATCH -J pr-sft
 #SBATCH -o logs/sft-%j.out
 #SBATCH -e logs/sft-%j.err
 #SBATCH -p gh
@@ -13,4 +13,4 @@ CONFIG="${1:?usage: sbatch slurm/sft.slurm <config.yaml> [overrides ...]}"
 shift || true
 source slurm/_common.sh
 
-python -m wordwave.scripts.train_sft --config "$CONFIG" --override "$@"
+python -m prm_rl.scripts.train_sft --config "$CONFIG" --override "$@"
