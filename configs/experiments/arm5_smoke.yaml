@@ -1,0 +1,55 @@
+# Arm 5 SMOKE — Counterfactual (numeric-grounding) reward.
+# No PRM needed for the reward itself; PRM only used in eval for process_correctness.
+
+seed: 42
+run_name: arm5_smoke
+output_dir: outputs/arm5_smoke
+
+model:
+  name: Qwen/Qwen2.5-1.5B-Instruct
+  dtype: bf16
+  device_map: auto
+  attn_implementation: null
+  load_in_4bit: false
+
+data:
+  split: train
+  subset: main
+  n: 64
+  golden_path: data/golden_smoke
+
+training:
+  num_train_epochs: 1
+  max_steps: 10
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 2
+  learning_rate: 5.0e-6
+  lr_scheduler_type: constant
+  warmup_ratio: 0.0
+  logging_steps: 1
+  save_strategy: 'no'
+  save_total_limit: 1
+  bf16: true
+  gradient_checkpointing: true
+  num_generations: 4
+  max_completion_length: 256
+  temperature: 0.9
+  top_p: 1.0
+  beta: 0.04
+  report_to: [none]
+
+rewards:
+  - name: outcome
+    weight: 1.0
+  - name: counterfactual
+    weight: 0.5
+
+eval:
+  policy_path: outputs/arm5_smoke
+  prm_path: outputs/prm_smoke
+  traps_path: data/traps/trap_examples.json
+  n_test: 20
+  gen_batch_size: 8
+  max_new_tokens: 256
+  temperature: 0.0
+  verbosity_baseline: 150.0

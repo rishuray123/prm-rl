@@ -377,9 +377,60 @@ Commits landed this session (chronological):
 | `171a1db`   | slurm/README typo (prm_rl → prm-rl)                     |
 | `0c79cda`   | Fix evaluate.py imports + torch pin bump + module loads |
 | `6b0a0e7`   | Vista: modules BEFORE venv activation (PATH fix)        |
+| `9400ad8`   | Add this knowledge-base doc                             |
 
-Next step (in progress): actually complete the smoke run with the
-upgraded torch and record the `eval_results.json` numbers.
+### 2026-07-25 — First Arm 1 result on Vista GH200
+
+Smoke run completed end-to-end after applying the cu126 torch fix
+(§2.3). Config: `configs/experiments/arm1_smoke.yaml` (Qwen2.5-1.5B,
+10 GRPO steps, n=64 train, n=20 test, 5 traps).
+
+```json
+{
+  "accuracy": {"accuracy": 0.45, "correct": 9, "n": 20},
+  "behavior": {"avg_tokens": 149.85, "avg_steps": 5.3, "avg_self_rougeL": 0.199},
+  "traps": {"exploit_rate": 0.4, "trap_solve_rate": 0.2, "n": 5},
+  "crhs": {"CRHS": 0.485, "CRHS_not_exploit": 0.6, "CRHS_phi_cct": 0.5,
+           "CRHS_not_verbose": 1.0, "CRHS_nie": 0.0}
+}
+```
+
+**Interpretation:**
+- 45% ± ~22 pp (Wilson 95% CI at n=20) — too noisy for arm comparison,
+  useful only as a "pipeline works" signal.
+- 10 GRPO steps ≪ what's needed for learning — this is essentially
+  base-model Qwen2.5-1.5B-Instruct behavior with a light nudge.
+- CRHS = 0.485 with `CRHS_not_verbose = 1.0` — model is right at the
+  verbosity baseline (149.85 tokens vs 150 baseline), which by our
+  scoring means "no verbosity penalty" (probably too generous — the
+  baseline should be recalibrated once we have SFT-trained anchors).
+
+Thesis-grade eval requires at minimum `n_test ≥ 500`, `max_steps ≥
+1000`, and 3–5 seeds per arm. Current smoke is validation only.
+
+### 2026-07-25 — All-arms smoke driver
+
+Added:
+
+- `configs/experiments/prm_smoke.yaml` — DeBERTa-v3-xsmall, n=64, 1 epoch.
+- `configs/experiments/arm{2,3,4,5,6}_smoke.yaml` — 1.5B policy, 10
+  steps, mirroring `arm1_smoke.yaml`, only rewards differ.
+- `slurm/smoke_all_arms.sh` — sequential driver: golden → PRM → arms
+  1..6 → aggregate. ~35–40 min on H200, under gh-dev's 2 h.
+- `src/prm_rl/scripts/summarize_smoke.py` — reads every
+  `eval_results.json` and writes a markdown comparison table.
+
+**Caveat baked into `prm_smoke.yaml`:** with
+`strategy='gsm8k_native'` the PRM only sees positive steps and will
+collapse to ~1.0 for everything, so arms 2/3/4/6 rewards will not
+meaningfully differentiate completions in the smoke. This is fine for
+pipeline validation; not for scientific comparison. See §6.4.
+
+Commits landed today (post-smoke):
+
+| SHA        | Summary                                                          |
+|------------|------------------------------------------------------------------|
+| _pending_  | Add PRM + Arm 2..6 smoke configs, driver, summarizer, KB update  |
 
 ---
 
