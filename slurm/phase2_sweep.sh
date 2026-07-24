@@ -149,11 +149,30 @@ echo "======================================================================"
 
 submit() {
     if [[ "${DRY_RUN:-0}" == "1" ]]; then
-        echo "  [dry-run] $*"
+        echo "  [dry-run] $*" >&2
         echo "DRY_$RANDOM"
-    else
-        sbatch --parsable "$@"
+        return 0
     fi
+    local out jid
+    # TACC's sbatch wrapper prints a multi-line validation banner on
+    # stdout ("Welcome to the Vista Supercomputer ... --> Checking
+    # allocation ...") IN ADDITION to the jid; --parsable does NOT
+    # suppress the banner. Naively capturing `sbatch --parsable` puts
+    # the whole banner into $JID, which then breaks `--dependency=
+    # afterok:$JID`. So we capture stdout, then extract the last line
+    # that looks like a jid ("<digits>" or "<digits>;<cluster>").
+    if ! out=$(sbatch --parsable "$@"); then
+        echo "ERROR: sbatch exited non-zero:" >&2
+        printf '%s\n' "$out" >&2
+        return 1
+    fi
+    jid=$(printf '%s\n' "$out" | awk -F';' '/^[0-9]+/ {j=$1} END {print j}')
+    if [[ ! "$jid" =~ ^[0-9]+$ ]]; then
+        echo "ERROR: could not parse jid from sbatch output:" >&2
+        printf '%s\n' "$out" >&2
+        return 1
+    fi
+    printf '%s\n' "$jid"
 }
 
 TRAIN_IDS=()
@@ -181,7 +200,7 @@ for arm in $ARMS; do
                 "seed=${seed}" \
                 "output_dir=${outdir}" \
                 "run_name=${name}" \
-                "eval.policy_path=${outdir}")
+                "eval.policy_path=${outdir}") || exit 1
         TRAIN_IDS+=("$JID")
         echo "   train jid = $JID"
 
@@ -195,7 +214,7 @@ for arm in $ARMS; do
             slurm/eval.slurm "$cfg" \
                 "seed=${seed}" \
                 "output_dir=${outdir}" \
-                "eval.policy_path=${outdir}")
+                "eval.policy_path=${outdir}") || exit 1
         EVAL_IDS+=("$EID")
         echo "   eval  jid = $EID  (depends on ${JID})"
     done
