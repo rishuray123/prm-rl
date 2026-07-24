@@ -31,8 +31,17 @@ bash slurm/setup_env.sh
 
 ```bash
 idev -p gh-dev -N 1 -n 1 -t 01:00:00
+
+# ORDER MATTERS: load Vista modules BEFORE activating the venv, otherwise
+# `module load python3` prepends the system Python to $PATH ahead of the
+# venv, so `pip` targets the (unwritable) system site-packages and
+# `python -m` invokes the wrong interpreter.
+module reset && module load gcc cuda python3
 source $SCRATCH/venvs/prm-rl/bin/activate
 source $SCRATCH/venvs/prm-rl/vista_env.sh
+
+# Sanity check — all three should point at the venv:
+which python && which pip && echo "$VIRTUAL_ENV"
 python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 

@@ -35,16 +35,16 @@ pip install -e "$REPO_ROOT"
 # expected; the `|| true` keeps setup non-fatal.
 pip install "flash-attn>=2.6" --no-build-isolation || true
 
-# Persist HF cache locations + module loads for interactive/batch shells.
-# Sourcing this on a compute node is what makes libpython3.11.so.1.0 and
-# nvcc visible in the linker/PATH; without it, `python` inside the venv
-# fails with `error while loading shared libraries`.
+# Persist HF cache locations for interactive/batch shells.
+#
+# IMPORTANT: this file MUST NOT run `module load` — module loads prepend
+# the system Python's bin directory to $PATH, and if that happens AFTER
+# venv activation, it clobbers the venv's bin ordering so `pip` writes
+# to the *system* site-packages (which is not writable, triggering the
+# infamous "Defaulting to user installation" fallback) and `python -m`
+# invokes the wrong interpreter. Load modules BEFORE activating the venv
+# (see the printed instructions and slurm/_common.sh).
 cat > "$VENV/vista_env.sh" <<EOF
-# Load the Vista modules the venv links against. Safe on login and
-# compute nodes; \`module reset\` is a no-op if modules are already set.
-module reset >/dev/null 2>&1 || true
-module load gcc cuda python3 >/dev/null 2>&1 || true
-
 export HF_HOME="$HF_CACHE_ROOT"
 export HF_DATASETS_CACHE="$HF_CACHE_ROOT/datasets"
 export TRANSFORMERS_CACHE="$HF_CACHE_ROOT/transformers"
@@ -58,5 +58,7 @@ echo "  venv:      $VENV"
 echo "  HF cache:  $HF_CACHE_ROOT"
 echo "  repo:      $REPO_ROOT"
 echo
-echo "Activate future sessions with:"
-echo "  source $VENV/bin/activate && source $VENV/vista_env.sh"
+echo "Activate future sessions with (order matters — modules FIRST):"
+echo "  module reset && module load gcc cuda python3"
+echo "  source $VENV/bin/activate"
+echo "  source $VENV/vista_env.sh"
