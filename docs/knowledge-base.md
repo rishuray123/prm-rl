@@ -4,7 +4,7 @@
 > target platforms goes here so we don't rediscover it. Maintained by
 > the Cursor agent per user request; edit freely.
 >
-> **Last updated:** 2026-07-25 (Phase 1.5 iteration + Phase 2 sweep artefacts landed)
+> **Last updated:** 2026-07-25 (Phase 1.5 diagnosed: PRM was NaN'ing in fp16 on H200 → §2.9 + `load_prm` fp32 fix)
 
 ---
 
@@ -253,7 +253,59 @@ and friends now source `slurm/env_caches.sh` explicitly, so even a
 partially-configured shell can't leak into `$HOME` if the driver is
 used.
 
-### 2.9 Vista hardware snapshot
+### 2.9 ⚠️ DeBERTa-v3 PRM silently NaN's in fp16 on H200 → PRM signal dies
+
+**Symptom:** `process_correctness` uniformly 0.000 (or, on an
+un-negated PRM, uniformly 1.000) across every arm in the Phase 1.5
+iter summary. HF training log for `outputs/prm_v2/` looks perfect
+(`eval_f1 ≥ 0.83`, healthy loss curve, sensible label balance), but
+`prm.score_steps(...)` returns `float('nan')` for both known-positive
+and known-negative training examples. The downstream
+`process_correctness` aggregator squashes NaN → 0 during summary
+formatting, so the failure hides in plain sight.
+
+**Root cause:** `outputs/prm_v2/config.json` gets `"dtype":
+"float16"` written by HF Trainer even when
+`TrainingArguments(bf16=True)`. On next `from_pretrained`, the model
+loads in fp16, and DeBERTa-v3's disentangled attention (relative
+position keys × content queries) overflows/NaNs on H200 forward
+passes. This is a documented upstream issue — DeBERTa-v3 only works
+reliably in fp32 or bf16 at inference.
+
+Consequence during Phase 1.5: every process-based reward function
+(`naive_process`, `naive_process + gold_verification`, ...) was
+called with a broken PRM, yielded NaN reward, was silently zeroed by
+the GRPO reward-collation code, and the process-based arms trained
+with dead process signal. That's why arms 2/3/5 didn't diverge from
+arm 1 on any behavioral metric worth caring about.
+
+**Fix (code, no retrain required):**
+`prm_rl.models.prm.load_prm` now defaults to `torch_dtype=torch.
+float32`. The on-disk weights are healthy; the bug was in the
+forward pass only. Callers can override with `torch_dtype=torch.
+bfloat16` on H200 if they want the throughput.
+
+**Verification recipe** — after any PRM retrain, run:
+
+```python
+from datasets import load_from_disk
+from prm_rl.models.prm import load_prm
+import torch
+d = load_from_disk("data/prm_v2")
+prm = load_prm("outputs/prm_v2", device="cuda" if torch.cuda.is_available() else "cpu")
+pos = [i for i, l in enumerate(d["label"]) if l == 1][:5]
+neg = [i for i, l in enumerate(d["label"]) if l == 0][:5]
+for i in pos + neg:
+    ex = d[i]
+    s = prm.score_steps(ex["question"], [ex["step"]])[0]
+    print(f'label={ex["label"]} kind={ex["neg_kind"]!r:<25s} pred={s:.3f}')
+```
+
+Expected: positives should score ≥ 0.6, negatives ≤ 0.4. If any
+score is NaN, the model is still loading in fp16 — check
+`config.json`'s `dtype` field and `load_prm`'s `torch_dtype` argument.
+
+### 2.10 Vista hardware snapshot
 
 - Node: `c610-XXX` GH200 (Grace ARM CPU + H200 GPU, 120 GB HBM — note **not** the 480 GB variant seen in some GH200 SKUs).
 - OS: Rocky 9.7 (per the 2026-02-12 admin notice in the motd).

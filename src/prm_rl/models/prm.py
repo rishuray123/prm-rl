@@ -49,12 +49,31 @@ class PRMScorer:
         return scores
 
 
-def load_prm(model_name_or_path: str, device: str = "cuda") -> PRMScorer:
+def load_prm(
+    model_name_or_path: str,
+    device: str = "cuda",
+    torch_dtype: torch.dtype | None = None,
+) -> PRMScorer:
     tok = AutoTokenizer.from_pretrained(model_name_or_path)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
+    # DeBERTa-v3's disentangled-attention numerically diverges to NaN
+    # in fp16 forward passes on H200/A100 (a well-known upstream
+    # issue). HF Trainer with `bf16=True` writes checkpoints whose
+    # config.json claims dtype=float16 which then poisons
+    # `from_pretrained(..., torch_dtype="auto")` into loading fp16.
+    # Result: every prediction is NaN, downstream `process_correctness`
+    # aggregates NaN → 0, and process-based reward signals during RL
+    # training are silently zeroed.
+    # Force fp32 by default (DeBERTa-v3-base is only ~184M params,
+    # cost is negligible). Callers can override with bf16 on H200 if
+    # they want the extra throughput.
+    if torch_dtype is None:
+        torch_dtype = torch.float32
     model = AutoModelForSequenceClassification.from_pretrained(
-        model_name_or_path, num_labels=2
+        model_name_or_path,
+        num_labels=2,
+        torch_dtype=torch_dtype,
     )
     model.eval().to(device)
     return PRMScorer(model=model, tokenizer=tok, device=device)
