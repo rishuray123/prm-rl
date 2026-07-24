@@ -1,0 +1,55 @@
+# PRM v2 — the first PRM trained with synthetic negatives.
+#
+# Motivation: the smoke PRM (see prm_smoke.yaml and docs/knowledge-base.md
+# §6.1) was trained with `strategy='gsm8k_native'`, which only labels
+# positive steps. That gives the classifier no gradient signal and it
+# collapses to `p ≈ 1.0` for every step. Arms 2/3/4/6 then receive a
+# nearly-uniform process reward and cannot meaningfully differentiate
+# completions.
+#
+# This config trains a bigger DeBERTa-v3-base PRM on a larger golden
+# slice, with the synthetic-negative pipeline enabled at
+# `inject_negatives_prob=0.5` (see build_prm_data --help and
+# src/prm_rl/data/prm_data.py).
+#
+# Data path assumption: run
+#   python -m prm_rl.scripts.build_golden --split train --n 2000 \
+#       --out data/golden_v2 --strategy gsm8k_native
+#   python -m prm_rl.scripts.build_prm_data --golden data/golden_v2 \
+#       --out data/prm_v2 --inject_negatives_prob 0.5 --seed 0
+# before submitting this config. The prm training script picks up the
+# expanded rows from the golden_path since it re-runs build_prm_dataset
+# on load; if you prefer to pre-materialise, set the golden_path to
+# data/prm_v2 and swap train_prm's loader accordingly.
+
+seed: 42
+run_name: prm_v2
+output_dir: outputs/prm_v2
+
+model:
+  name: microsoft/deberta-v3-base
+
+data:
+  golden_path: data/golden_v2
+  val_size: 0.10
+  # Passed through to build_prm_dataset() at train time (see
+  # src/prm_rl/scripts/train_prm.py — extend to read these).
+  inject_negatives_prob: 0.5
+  max_negatives_per_example: 2
+
+training:
+  num_train_epochs: 3
+  per_device_train_batch_size: 16
+  per_device_eval_batch_size: 32
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.06
+  logging_steps: 20
+  bf16: true
+  max_length: 1024
+  gradient_checkpointing: false
+  report_to: [none]
+
+  # Success criterion for Phase 2 gating (§6.1): val F1 >= 0.7.
+  # If val F1 stays below this after 3 epochs we escalate to Path B
+  # (teacher distillation, `strategy='teacher'` in build_golden.py).

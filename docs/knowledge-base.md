@@ -4,7 +4,7 @@
 > target platforms goes here so we don't rediscover it. Maintained by
 > the Cursor agent per user request; edit freely.
 >
-> **Last updated:** 2026-07-25
+> **Last updated:** 2026-07-25 (Phase 1.5 iteration + Phase 2 sweep artefacts landed)
 
 ---
 
@@ -482,6 +482,77 @@ Commits landed for the all-arms smoke result:
 |------------|------------------------------------------------------------|
 | _pending_  | Log first all-arms smoke result table + phase 2 plan       |
 
+### 2026-07-25 — Phase 1.5 iteration harness + Phase 2 sweep artefacts
+
+Added (all pre-Vista — code is on the local Mac, waiting to be
+pulled and run):
+
+- **`src/prm_rl/data/prm_data.py`** — extended `build_prm_dataset`
+  with `inject_negatives_prob`, `negative_kinds`,
+  `max_negatives_per_example`, `seed`. Four negative kinds are
+  implemented: `arithmetic_mutation`, `operator_swap`,
+  `fabricated_conclusion`, `duplicate_prev_step`. Deterministic under
+  fixed seed. New `summarize_prm_dataset(ds)` returns
+  `{n, n_pos, n_neg, pos_frac}` for logging. Directly addresses §6.1
+  Path A.
+- **`src/prm_rl/scripts/build_prm_data.py`** — CLI flags
+  `--inject_negatives_prob`, `--negative_kinds`,
+  `--max_negatives_per_example`, `--seed`. Logs the pos/neg split.
+- **`src/prm_rl/training/prm_train.py`** — reads the new fields from
+  the YAML `data:` block and logs the dataset stats before training.
+- **`tests/test_prm_data.py`** — 10 tests (5 pure-Python + 5
+  `datasets`-backed). Local light run: all 21 previous tests still
+  pass; the new file's `datasets`-backed tests skip cleanly on the
+  local Mac and will run on Vista via `make test`.
+- **`configs/experiments/prm_v2.yaml`** — DeBERTa-v3-base PRM
+  trained on `data/golden_v2` (n=2000) with
+  `inject_negatives_prob=0.5`. Target: val F1 ≥ 0.7 (§6.1 success
+  criterion).
+- **`configs/experiments/arm{1..6}_iter.yaml`** — Phase 1.5 configs
+  sized for `gh-dev`'s 2 h cap. Qwen2.5-1.5B, max_steps=50, n=256
+  train, n_test=100. Point at `outputs/prm_v2` for the process-based
+  arms.
+- **`slurm/iter_all_arms.sh`** — sequential driver: build golden v2 →
+  build PRM data with negatives → train PRM v2 → RL train+eval for
+  arms 1..6 → aggregate to `outputs/iter_summary.md`. Wall-clock
+  budget: ~75–105 min on H200, comfortably under gh-dev's 2 h.
+- **`configs/experiments/arm{1..6}_phase2.yaml`** — Phase 2 configs
+  at Qwen2.5-7B, max_steps=500, n=2000 train, n_test=500,
+  num_generations=8, batch 4 × grad_accum 4. Requesting 5 h walltime
+  per job on `gh` (expected actual ~2.5–4 h).
+- **`slurm/phase2_sweep.sh`** — sbatch fan-out for 6 arms × 3 seeds
+  = 18 jobs on `gh`. Each arm's eval is chained via
+  `--dependency=afterok:$train_jid` off its train job so wall time
+  is per-arm, not global.
+- **`slurm/phase2_summarize.sh`** — aggregates the 18 eval
+  `eval_results.json` files into `outputs/phase2_summary.md`.
+
+**Iteration cadence going forward:**
+
+1. `idev -p gh-dev -t 02:00:00` → `bash slurm/iter_all_arms.sh`.
+   Fast, no queue wait, tells us whether the PRM v2 signal is
+   discriminating (`process_correctness` in the summary should stop
+   being uniformly 1.000).
+2. If (1) looks reasonable, `bash slurm/phase2_sweep.sh` from a login
+   node. Comes back overnight with the real numbers.
+3. `bash slurm/phase2_summarize.sh` → paste table into thesis
+   `thesis_draft/04_chapter4_experiments.md §4.8` and re-run pandoc
+   per `thesis_draft/README_HOW_TO_ASSEMBLE.md`.
+
+**Why gh-dev interactively rather than the gh queue for iteration:**
+gh-dev is 2 h wall, immediate allocation; gh is 48 h wall, queues.
+A 500-step 7B arm exceeds gh-dev's cap (§6.2 est. 2–4 h per arm) so
+we CANNOT run the real sweep there — but a 50-step 1.5B iter arm
+fits, and iterating on `iter_all_arms.sh` on gh-dev with `idev` is
+by far the fastest way to catch code bugs in the new PRM pipeline
+before spending 50+ SUs on the 7B sweep.
+
+Commits pending for this batch:
+
+| SHA        | Summary                                                        |
+|------------|----------------------------------------------------------------|
+| _pending_  | Synthetic-neg PRM data, prm_v2, arm{1..6}_{iter,phase2}, sweep |
+
 ---
 
 ## 6. Phase 2 — plan for the first thesis-grade run
@@ -512,6 +583,19 @@ Two viable paths (pick one):
 Recommended: implement synthetic negatives first (self-contained,
 ~30 LOC), retrain PRM at scale, measure PRM val F1. Only add teacher
 distillation if val F1 stays below ~0.7.
+
+**STATUS (2026-07-25):** Path A (synthetic negatives) is **landed in
+code, not yet run on Vista**. See the 2026-07-25 session log entry
+for the file list. Four negative kinds are supported
+(`arithmetic_mutation`, `operator_swap`, `fabricated_conclusion`,
+`duplicate_prev_step`), deterministic under fixed seed, exposed via
+both `build_prm_dataset(...)` kwargs and the
+`--inject_negatives_prob` CLI flag on `build_prm_data`. YAML plumbing
+(`data.inject_negatives_prob` etc.) is live in `prm_train.py`. Next
+action is to run `slurm/iter_all_arms.sh` and confirm `PRM v2` gets
+val F1 ≥ 0.7 and that `process_correctness` in
+`outputs/iter_summary.md` is no longer stuck at 1.000. If val F1 <
+0.7 after Path A, escalate to Path B.
 
 ### 6.2 Scale the RL runs (P1)
 

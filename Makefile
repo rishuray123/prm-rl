@@ -24,7 +24,8 @@ install-dev:
 
 test:
 	PYTHONPATH=src $(PYTHON) -m pytest tests/test_steps.py tests/test_rewards.py \
-	    tests/test_traps.py tests/test_evaluation_scalars.py tests/test_registry.py
+	    tests/test_traps.py tests/test_evaluation_scalars.py tests/test_registry.py \
+	    tests/test_prm_data.py
 
 lint:
 	ruff check src tests

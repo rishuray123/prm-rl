@@ -21,7 +21,11 @@ from transformers import (
 )
 
 from ..data.golden import load_golden
-from ..data.prm_data import build_prm_dataset
+from ..data.prm_data import (
+    DEFAULT_NEGATIVE_KINDS,
+    build_prm_dataset,
+    summarize_prm_dataset,
+)
 from ..utils.logging import get_logger
 
 log = get_logger(__name__)
@@ -50,8 +54,23 @@ def _compute_metrics(pred):
 def run_prm(cfg: DictConfig) -> str:
     log.info("Loading golden dataset from %s", cfg.data.golden_path)
     golden = load_golden(cfg.data.golden_path)
-    prm_ds: Dataset = build_prm_dataset(golden)
-    log.info("Built PRM dataset with %d rows", len(prm_ds))
+    inject_prob = float(cfg.data.get("inject_negatives_prob", 0.0))
+    max_negs = int(cfg.data.get("max_negatives_per_example", 2))
+    neg_kinds = list(cfg.data.get("negative_kinds", DEFAULT_NEGATIVE_KINDS))
+    neg_seed = int(cfg.data.get("negatives_seed", cfg.get("seed", 0)))
+    prm_ds: Dataset = build_prm_dataset(
+        golden,
+        inject_negatives_prob=inject_prob,
+        negative_kinds=neg_kinds,
+        max_negatives_per_example=max_negs,
+        seed=neg_seed,
+    )
+    stats = summarize_prm_dataset(prm_ds)
+    log.info(
+        "Built PRM dataset: n=%d (pos=%d, neg=%d, pos_frac=%.3f)"
+        " [inject_negatives_prob=%.2f]",
+        stats["n"], stats["n_pos"], stats["n_neg"], stats["pos_frac"], inject_prob,
+    )
 
     prm_ds = prm_ds.train_test_split(test_size=cfg.data.get("val_size", 0.05), seed=cfg.get("seed", 0))
 

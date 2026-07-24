@@ -1,0 +1,52 @@
+# Arm 2 — Phase 1.5 iteration config (naive process, PRM v2).
+
+seed: 42
+run_name: arm2_iter
+output_dir: outputs/arm2_iter
+
+model:
+  name: Qwen/Qwen2.5-1.5B-Instruct
+  dtype: bf16
+  device_map: auto
+
+data:
+  split: train
+  subset: main
+  n: 256
+  golden_path: data/golden_v2
+
+training:
+  num_train_epochs: 1
+  max_steps: 50
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 4
+  learning_rate: 5.0e-6
+  lr_scheduler_type: constant
+  logging_steps: 5
+  save_strategy: 'no'
+  save_total_limit: 1
+  bf16: true
+  gradient_checkpointing: true
+  num_generations: 4
+  max_completion_length: 384
+  temperature: 0.9
+  top_p: 1.0
+  beta: 0.04
+  report_to: [none]
+
+rewards:
+  - name: naive_process
+    weight: 1.0
+    prm_path: outputs/prm_v2
+    device: cuda
+    aggregation: mean
+
+eval:
+  policy_path: outputs/arm2_iter
+  prm_path: outputs/prm_v2
+  traps_path: data/traps/trap_examples.json
+  n_test: 100
+  gen_batch_size: 8
+  max_new_tokens: 384
+  temperature: 0.0
+  verbosity_baseline: 150.0

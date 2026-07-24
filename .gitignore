@@ -30,3 +30,11 @@ data/prm/
 
 .ipynb_checkpoints/
 .DS_Store
+
+# thesis draft & UT templates — kept locally, never committed
+thesis_draft/
+/Thesis 2022 templates/
+/user guideline and format details for thesis/
+Cleaned_Reward_Hacking_Literature_Review.docx
+~$*.docx
+*.docx.bak

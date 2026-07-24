@@ -1,0 +1,72 @@
+# Arm 1 — Phase 1.5 iteration config.
+#
+# Slots between the smoke (10 steps, n_test=20) and Phase 2 (500 steps,
+# n_test=500) so we can iterate on gh-dev without waiting in queue.
+#
+# Sizing:
+#   * Policy: Qwen2.5-1.5B (same as smoke — no policy-scale change here).
+#   * max_steps=50, n=256 train, n_test=100.
+#   * End-to-end train+eval ≈ 25–35 min on H200, fits inside gh-dev's
+#     2h wall cap with room for a 6-arm sequential driver
+#     (see slurm/iter_all_arms.sh, ~90–120 min total).
+#
+# What this config is FOR:
+#   * Checking whether a discriminating PRM (via prm_v2.yaml + synthetic
+#     negatives) actually flips the process_correctness column off 1.0.
+#   * Getting a first look at arm-vs-arm CRHS spread with any real
+#     resolution.
+#
+# What this config is NOT for:
+#   * Cite-able arm rankings. Still single-seed, n_test=100. See §4.6
+#     of the thesis draft for what would be needed to cite numbers.
+
+seed: 42
+run_name: arm1_iter
+output_dir: outputs/arm1_iter
+
+model:
+  name: Qwen/Qwen2.5-1.5B-Instruct
+  dtype: bf16
+  device_map: auto
+  attn_implementation: null
+  load_in_4bit: false
+
+data:
+  split: train
+  subset: main
+  n: 256
+  golden_path: data/golden_v2
+
+training:
+  num_train_epochs: 1
+  max_steps: 50
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 4
+  learning_rate: 5.0e-6
+  lr_scheduler_type: constant
+  warmup_ratio: 0.0
+  logging_steps: 5
+  save_strategy: 'no'
+  save_total_limit: 1
+  bf16: true
+  gradient_checkpointing: true
+  num_generations: 4
+  max_completion_length: 384
+  temperature: 0.9
+  top_p: 1.0
+  beta: 0.04
+  report_to: [none]
+
+rewards:
+  - name: outcome
+    weight: 1.0
+
+eval:
+  policy_path: outputs/arm1_iter
+  prm_path: outputs/prm_v2
+  traps_path: data/traps/trap_examples.json
+  n_test: 100
+  gen_batch_size: 8
+  max_new_tokens: 384
+  temperature: 0.0
+  verbosity_baseline: 150.0
