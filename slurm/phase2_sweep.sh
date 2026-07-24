@@ -21,6 +21,12 @@
 #   ARMS="arm1_phase2"     # limit to a subset of arms
 #   SKIP_PREFETCH=1        # skip the login-node model prefetch
 #   DRY_RUN=1              # print sbatch commands but don't submit
+#   DEPEND_ON=<jid>        # every train job is submitted with
+#                          # --dependency=afterany:$jid so it waits for
+#                          # the given job (typically iter_all_arms) to
+#                          # finish. `afterany` (not afterok) so that a
+#                          # partial iter failure still yields useful
+#                          # arm 1/4/6 phase2 data overnight.
 #
 # See docs/knowledge-base.md §6.2 for the Phase 2 plan and §2.8 for
 # the cache-directory setup.
@@ -113,6 +119,17 @@ echo "Estimated cost:    $N_JOBS train jobs × ~4 SU each ≈ ${EST_SU} SU (+eva
 echo "Estimated storage: ~${EST_STORE} GB of final checkpoints on \$SCRATCH"
 echo "                   (peak ~$(( EST_STORE * 3 )) GB during training with save_total_limit=2)"
 
+# Optional Slurm dependency (used by the overnight wrapper so phase2
+# waits for iter_all_arms + PRM retrain before starting).
+DEPEND_ON="${DEPEND_ON:-}"
+if [[ -n "$DEPEND_ON" ]]; then
+    if [[ ! "$DEPEND_ON" =~ ^[0-9]+$ ]]; then
+        echo "ERROR: DEPEND_ON must be a numeric jid, got: $DEPEND_ON" >&2
+        exit 1
+    fi
+    echo "Dependency:        every train job will --dependency=afterany:${DEPEND_ON}"
+fi
+
 # -----------------------------------------------------------------------------
 # 3. Optional: prefetch Qwen2.5-7B on the login node so 18 concurrent
 #    GPU jobs don't all race to download the same 14 GB of weights.
@@ -196,6 +213,7 @@ for arm in $ARMS; do
             -J "$name" \
             -o "logs/${name}-%j.out" \
             -e "logs/${name}-%j.err" \
+            ${DEPEND_ON:+--dependency=afterany:${DEPEND_ON}} \
             slurm/rl.slurm "$cfg" \
                 "seed=${seed}" \
                 "output_dir=${outdir}" \

@@ -1,146 +1,106 @@
 #!/bin/bash
-# Overnight driver: rerun Phase 1.5 iter (retrains PRM v2 with the
-# fixed hyperparameters), verify the PRM actually discriminates, then
-# fire the Phase 2 sweep so it runs while you sleep.
+# LOGIN-NODE driver: submits iter_all_arms.sh as an sbatch job, then
+# queues the Phase 2 sweep with a Slurm dependency so it waits for
+# iter (+ PRM retrain + probe) to finish before starting.
 #
-# WHY THIS EXISTS
-# ---------------
-# We diagnosed two PRM failure modes:
-#   1. fp16 inference NaN on H200 (fixed in load_prm, commit bc50aea).
-#   2. Backbone collapsing to the class prior — pred=0.719 for every
-#      input on a 71%-positive dataset — because of right-side
-#      truncation, max_length=1024 vs native 512, bf16 gradient
-#      underflow on the classifier, and too-conservative lr/epochs
-#      (fixed in prm_v2.yaml + prm_train.py, commit 6d7327c).
-# This driver validates both fixes end-to-end (STAGE A + STAGE B)
-# before it commits ~90 SUs to Phase 2 (STAGE C).
+# Vista quirk: compute nodes DO NOT have sbatch on PATH, so a wrapper
+# that itself tries to sbatch from within a running job fails. This
+# script has to be run from the login node — everything past this
+# point is Slurm-managed so you can safely close the SSH after.
 #
-# USAGE
-# -----
-# From a login node with the venv activated:
+# USAGE (from a login node with the venv activated):
 #
 #     cd $WORK/prm-rl
-#     sbatch slurm/iter_and_phase2.sh
+#     git pull
+#     bash slurm/iter_and_phase2.sh
 #
-# Then walk away. Sbatch queues iter on the gh partition; when it
-# completes (~90-100 min), the same job submits the Phase 2 sweep
-# (36 sub-jobs, all --dependency-free — they queue independently on
-# gh). This wrapper job then exits. Overnight, Phase 2 finishes at
-# its own pace (~4-8 h once nodes free up).
+# WHAT IT DOES
+#   1. Sbatch iter_all_arms.sh on gh (-t 03:00:00). Captures its jid.
+#   2. Runs the Phase 2 sweep with DEPEND_ON=<iter_jid>. All 18 phase2
+#      train sbatches are submitted with `--dependency=afterany:<jid>`,
+#      so they queue up but stay pending until iter finishes.
+#      `afterany` (not afterok) so partial iter failures still yield
+#      arms 1/4/6 phase2 data overnight.
+#   3. Prints a summary + morning-triage recipe.
 #
-# In the morning:
-#   bash slurm/phase2_summarize.sh
-#
-# WHY WE DON'T USE --dependency=afterok
-# -------------------------------------
-# Slurm dependencies would let iter and phase2 be separate jobs, but
-# then we'd have to modify phase2_sweep.sh to accept a jid and add
-# --dependency=afterok:$jid to every submission. Inlining iter and
-# phase2 into one wrapper is simpler and produces identical timing:
-# phase2 is sbatch'd from inside the wrapper after iter finishes,
-# and those 36 jobs are then Slurm-managed independently.
+# ENV OVERRIDES
+#   ITER_WALLTIME=03:00:00   how long to give iter (default 3h)
+#   SKIP_ITER=1              skip iter, run only phase2 (uses whatever
+#                            PRM is currently on disk)
+#   Everything phase2_sweep.sh accepts (SEEDS, ARMS, DRY_RUN, ...) is
+#   forwarded through the current shell env.
 
-#SBATCH -J iter+phase2
-#SBATCH -o logs/iter-then-phase2-%j.out
-#SBATCH -e logs/iter-then-phase2-%j.err
-#SBATCH -p gh
-#SBATCH -N 1
-#SBATCH -n 1
-#SBATCH -t 03:00:00
+set -euo pipefail
 
-# Note: no `set -e`. We want STAGE C to run even if STAGE A partially
-# failed — arms 1/4/6 don't use the PRM and their eval numbers are
-# thesis-usable regardless. We handle failures explicitly.
-set -uo pipefail
-
-source slurm/_common.sh
-
-# ---------------------------------------------------------------------
-# STAGE A — Phase 1.5 iter: rebuild PRM data + retrain PRM v2 with the
-# new hyperparams + rerun the 6 iter arms.
-# ---------------------------------------------------------------------
-echo
-echo "########################################################################"
-echo "STAGE A: iter_all_arms (retrain PRM v2 with fixed hyperparams)"
-echo "########################################################################"
-STAGE_A_START=$SECONDS
-bash slurm/iter_all_arms.sh
-STAGE_A_EXIT=$?
-STAGE_A_ELAPSED=$(( SECONDS - STAGE_A_START ))
-echo
-echo "STAGE A finished with exit=$STAGE_A_EXIT after ${STAGE_A_ELAPSED}s"
-
-if (( STAGE_A_EXIT != 0 )); then
-    echo "WARN: iter_all_arms.sh returned $STAGE_A_EXIT."
-    echo "      outputs/prm_v2/ may be stale or partial."
-    echo "      Continuing to STAGE B/C anyway — arms 1/4/6 don't need PRM"
-    echo "      and arm 2/3/5 will fall back to whatever's on disk."
+# ----- 0. pre-flight (matches phase2_sweep's checks) -----
+if [[ -z "${SCRATCH:-}" || -z "${WORK:-}" ]]; then
+    echo "ERROR: \$SCRATCH / \$WORK not set — are you on Vista?" >&2
+    exit 1
 fi
-
-# ---------------------------------------------------------------------
-# STAGE B — Verify PRM v2 discriminates. Best-effort; failure here
-# does not block STAGE C (we still want overnight Phase 2 results).
-# ---------------------------------------------------------------------
-echo
-echo "########################################################################"
-echo "STAGE B: verify PRM v2 discriminates positives from negatives"
-echo "########################################################################"
-python - <<'PY' || echo "STAGE B probe failed; continuing regardless."
-import statistics
-import torch
-from datasets import load_from_disk
-from prm_rl.models.prm import load_prm
-
-d = load_from_disk('data/prm_v2')
-prm = load_prm('outputs/prm_v2', device='cuda' if torch.cuda.is_available() else 'cpu')
-
-pos_idx = [i for i, l in enumerate(d['label']) if l == 1][:15]
-neg_idx = [i for i, l in enumerate(d['label']) if l == 0][:15]
-pos_scores = [prm.score_steps(d[i]['question'], [d[i]['step']])[0] for i in pos_idx]
-neg_scores = [prm.score_steps(d[i]['question'], [d[i]['step']])[0] for i in neg_idx]
-
-pm, nm = statistics.mean(pos_scores), statistics.mean(neg_scores)
-print(f'positives: mean={pm:.3f}  min={min(pos_scores):.3f}  max={max(pos_scores):.3f}')
-print(f'negatives: mean={nm:.3f}  min={min(neg_scores):.3f}  max={max(neg_scores):.3f}')
-print(f'discrimination gap = {pm - nm:.3f}')
-
-if pm - nm > 0.20:
-    print('OK: PRM discriminates cleanly. Phase 2 process-based arms will get real signal.')
-elif pm - nm > 0.05:
-    print('WEAK: PRM gap in [0.05, 0.20]. Some signal for process arms, but noisy.')
-else:
-    print('BROKEN: gap < 0.05. Process-based arms will train against near-constant reward.')
-    print('        Arms 1/4/6 (no PRM) will still produce thesis-usable numbers.')
-PY
-
-# ---------------------------------------------------------------------
-# STAGE C — Fire the Phase 2 sweep. 36 sub-jobs (18 train + 18 eval)
-# get sbatch'd here and Slurm manages them independently.
-# ---------------------------------------------------------------------
-echo
-echo "########################################################################"
-echo "STAGE C: submit Phase 2 sweep (18 train + 18 eval sbatch jobs)"
-echo "########################################################################"
-# Qwen2.5-7B is already in HF_HOME from the earlier prefetch on the
-# login node; skip the re-download attempt here (compute nodes may
-# have flaky egress).
-export SKIP_PREFETCH=1
-bash slurm/phase2_sweep.sh
-STAGE_C_EXIT=$?
-echo
-echo "STAGE C finished with exit=$STAGE_C_EXIT"
-
-if (( STAGE_C_EXIT != 0 )); then
-    echo "ERROR: phase2_sweep.sh failed to submit. Investigate the log above."
+if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+    echo "ERROR: no venv activated." >&2
+    echo "  source \$SCRATCH/venvs/prm-rl/bin/activate" >&2
+    exit 1
+fi
+if ! command -v sbatch >/dev/null 2>&1; then
+    echo "ERROR: sbatch not on PATH — are you on a login node?" >&2
+    echo "  If you're inside an idev, 'exit' back to login2/login1." >&2
     exit 1
 fi
 
+_this_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$_this_dir/.." && pwd)"
+cd "$REPO_ROOT"
+
+ITER_WALLTIME="${ITER_WALLTIME:-03:00:00}"
+
+# ----- 1. sbatch iter -----
+ITER_JID=""
+if [[ "${SKIP_ITER:-0}" == "1" ]]; then
+    echo "SKIP_ITER=1 → skipping iter submission; phase2 will use existing PRM."
+else
+    echo "======================================================================"
+    echo "STAGE A: submit iter_all_arms.sh to gh"
+    echo "======================================================================"
+    ITER_OUT=$(sbatch --parsable \
+        -p gh -N 1 -n 1 -t "$ITER_WALLTIME" \
+        -J "iter+prm" \
+        -o "logs/iter-only-%j.out" \
+        -e "logs/iter-only-%j.err" \
+        --wrap "set -euo pipefail; source slurm/_common.sh; bash slurm/iter_all_arms.sh")
+    # TACC banner strip (same trick as phase2_sweep.sh submit()).
+    ITER_JID=$(printf '%s\n' "$ITER_OUT" | awk -F';' '/^[0-9]+/ {j=$1} END {print j}')
+    if [[ ! "$ITER_JID" =~ ^[0-9]+$ ]]; then
+        echo "ERROR: could not parse iter jid from sbatch output:" >&2
+        printf '%s\n' "$ITER_OUT" >&2
+        exit 1
+    fi
+    echo "iter jid = $ITER_JID  (walltime $ITER_WALLTIME on gh)"
+fi
+
+# ----- 2. submit phase2 sweep with dependency -----
 echo
-echo "########################################################################"
-echo "ALL SCHEDULED. Phase 2 jobs are queued on gh; sleep well."
-echo "########################################################################"
+echo "======================================================================"
+echo "STAGE B: submit Phase 2 sweep (18 train + 18 eval jobs)"
+echo "======================================================================"
+if [[ -n "$ITER_JID" ]]; then
+    echo "Each Phase 2 train job will wait for iter jid $ITER_JID to finish"
+    echo "(dependency=afterany, so partial iter failure still allows phase2)."
+    DEPEND_ON="$ITER_JID" bash slurm/phase2_sweep.sh
+else
+    bash slurm/phase2_sweep.sh
+fi
+
+# ----- 3. summary -----
 echo
-echo "Morning routine:"
-echo "  squeue -u \$USER                    # see remaining Phase 2 jobs"
-echo "  cat outputs/iter_summary.md         # Phase 1.5 fix validation"
-echo "  bash slurm/phase2_summarize.sh      # aggregate Phase 2 results"
+echo "======================================================================"
+echo "SCHEDULED. Overnight plan:"
+echo "  * iter jid $ITER_JID runs first (~90-100 min)."
+echo "  * 18 phase2 train jobs + 18 phase2 eval jobs are queued behind it."
+echo "  * squeue -u \$USER to monitor."
+echo
+echo "In the morning:"
+echo "  tail -100 logs/iter-only-${ITER_JID:-XXXXXX}.out   # iter + PRM probe verdict"
+echo "  cat outputs/iter_summary.md                        # Phase 1.5 fix validation"
+echo "  bash slurm/phase2_summarize.sh                     # phase2 aggregation"
+echo "======================================================================"
