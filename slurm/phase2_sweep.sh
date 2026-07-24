@@ -1,54 +1,177 @@
 #!/bin/bash
 # Phase 2 sweep — the "real" run.
 #
-# Fans out 6 arms × 3 seeds = 18 sbatch jobs onto the gh queue at
+# Fans out 6 arms × 3 seeds = 18 sbatch jobs on the gh queue at
 # Qwen2.5-7B / 500 GRPO steps / n_test=500. Each job is standalone:
 # it (a) trains, (b) evaluates, (c) writes eval_results.json into its
-# own output_dir. Aggregation is a separate step below.
+# own output_dir. Aggregation is a separate step (phase2_summarize.sh).
 #
-# Usage (from repo root, on a login node):
+# All trained checkpoints and eval JSONs are routed to
+#   $SCRATCH/prm-rl-outputs/{arm}_seed{S}/
+# (NOT $WORK/prm-rl/outputs/) — /home1 and /work quotas are too small
+# for 18 × 14 GB Qwen2.5-7B checkpoints. Logs stay in
+# $WORK/prm-rl/logs/ (small text files).
+#
+# Usage (from a login node, with the venv activated and modules loaded):
 #
 #     bash slurm/phase2_sweep.sh
 #
-# What the sweep assumes exists BEFORE it runs:
-#   * data/golden_v2/       — built by iter_all_arms.sh or manually via
-#                             `python -m prm_rl.scripts.build_golden
-#                             --n 2000 --out data/golden_v2 --strategy
-#                             gsm8k_native`
-#   * data/prm_v2/          — built by iter_all_arms.sh or manually via
-#                             `python -m prm_rl.scripts.build_prm_data
-#                             --golden data/golden_v2 --out data/prm_v2
-#                             --inject_negatives_prob 0.5 --seed 0`
-#   * outputs/prm_v2/       — trained by iter_all_arms.sh or via
-#                             `python -m prm_rl.scripts.train_prm
-#                             --config configs/experiments/prm_v2.yaml`
+# Optional env overrides:
+#   SEEDS="42 43"          # limit to a subset of seeds
+#   ARMS="arm1_phase2"     # limit to a subset of arms
+#   SKIP_PREFETCH=1        # skip the login-node model prefetch
+#   DRY_RUN=1              # print sbatch commands but don't submit
 #
-# Budget:
-#   * Wall time per job: ≤ 5 h (requested via --time=05:00:00).
-#   * Cost per job:      ~2–4 SUs on ASC26008.
-#   * Total sweep cost:  ~40–70 SUs (well under our 9504 SU budget).
-#
-# After all 18 jobs complete, run slurm/phase2_summarize.sh (see below)
-# to aggregate eval_results.json across seeds into one markdown table
-# with mean ± std per metric per arm.
+# See docs/knowledge-base.md §6.2 for the Phase 2 plan and §2.8 for
+# the cache-directory setup.
 
 set -euo pipefail
 
-ARMS=(arm1_phase2 arm2_phase2 arm3_phase2 arm4_phase2 arm5_phase2 arm6_phase2)
-SEEDS=(42 43 44)
+# -----------------------------------------------------------------------------
+# 0. Pre-flight: environment
+# -----------------------------------------------------------------------------
+if [[ -z "${SCRATCH:-}" ]]; then
+    echo "ERROR: \$SCRATCH is not set — are you on a Vista node?" >&2
+    exit 1
+fi
+if [[ -z "${WORK:-}" ]]; then
+    echo "ERROR: \$WORK is not set — are you on a Vista node?" >&2
+    exit 1
+fi
+if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+    echo "ERROR: no venv activated. Run:" >&2
+    echo "  module reset && module load gcc cuda python3" >&2
+    echo "  source \$SCRATCH/venvs/prm-rl/bin/activate" >&2
+    echo "  # env_caches.sh will be sourced automatically below" >&2
+    exit 1
+fi
+if ! command -v sbatch >/dev/null 2>&1; then
+    echo "ERROR: sbatch not on PATH — are you on a login node?" >&2
+    exit 1
+fi
 
-mkdir -p logs
+# Source the shared cache-dir env so HF/Triton/etc land on $SCRATCH
+_this_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$_this_dir/env_caches.sh"
 
-JOBIDS=()
-for arm in "${ARMS[@]}"; do
-    for seed in "${SEEDS[@]}"; do
+# -----------------------------------------------------------------------------
+# 1. Pre-flight: repository state (Phase 1.5 must have completed)
+# -----------------------------------------------------------------------------
+REPO_ROOT="$(cd "$_this_dir/.." && pwd)"
+cd "$REPO_ROOT"
+
+MISSING=()
+[[ -d data/golden_v2 ]] || MISSING+=("data/golden_v2 (build via iter_all_arms.sh stage 1)")
+[[ -d data/prm_v2 ]]    || MISSING+=("data/prm_v2    (build via iter_all_arms.sh stage 2)")
+[[ -d outputs/prm_v2 ]] || MISSING+=("outputs/prm_v2 (train via iter_all_arms.sh stage 3)")
+if (( ${#MISSING[@]} )); then
+    echo "ERROR: Phase 1.5 artefacts missing. Run slurm/iter_all_arms.sh first." >&2
+    printf '  missing: %s\n' "${MISSING[@]}" >&2
+    exit 1
+fi
+
+# Sanity: config files exist for every arm/phase2.
+DEFAULT_ARMS="arm1_phase2 arm2_phase2 arm3_phase2 arm4_phase2 arm5_phase2 arm6_phase2"
+ARMS="${ARMS:-$DEFAULT_ARMS}"
+SEEDS="${SEEDS:-42 43 44}"
+for arm in $ARMS; do
+    cfg="configs/experiments/${arm}.yaml"
+    [[ -f "$cfg" ]] || { echo "ERROR: $cfg missing" >&2; exit 1; }
+done
+
+# -----------------------------------------------------------------------------
+# 2. Output layout on $SCRATCH
+# -----------------------------------------------------------------------------
+SCRATCH_OUT="${SCRATCH}/prm-rl-outputs"
+mkdir -p "$SCRATCH_OUT" logs
+
+# Report disk situation before we commit to submitting.
+echo "======================================================================"
+echo "Phase 2 sweep pre-flight"
+echo "======================================================================"
+echo "Repo root:         $REPO_ROOT"
+echo "Output root:       $SCRATCH_OUT"
+echo "HF_HOME:           $HF_HOME"
+echo "TRITON_CACHE_DIR:  $TRITON_CACHE_DIR"
+echo "Arms:              $ARMS"
+echo "Seeds:             $SEEDS"
+if command -v df >/dev/null; then
+    echo
+    echo "Disk usage:"
+    df -h "$WORK" "$SCRATCH" 2>/dev/null | awk 'NR==1||/\/(work|scratch)/'
+fi
+
+# Rough cost/space estimate
+N_ARMS=$(echo "$ARMS" | wc -w)
+N_SEEDS=$(echo "$SEEDS" | wc -w)
+N_JOBS=$(( N_ARMS * N_SEEDS ))
+EST_SU=$(( N_JOBS * 4 ))     # ~4 SUs / job at 5h walltime request
+EST_STORE=$(( N_JOBS * 14 )) # ~14 GB / job final checkpoint
+echo
+echo "Estimated cost:    $N_JOBS train jobs × ~4 SU each ≈ ${EST_SU} SU (+eval ≈ ${N_JOBS} SU)"
+echo "Estimated storage: ~${EST_STORE} GB of final checkpoints on \$SCRATCH"
+echo "                   (peak ~$(( EST_STORE * 3 )) GB during training with save_total_limit=2)"
+
+# -----------------------------------------------------------------------------
+# 3. Optional: prefetch Qwen2.5-7B on the login node so 18 concurrent
+#    GPU jobs don't all race to download the same 14 GB of weights.
+# -----------------------------------------------------------------------------
+if [[ "${SKIP_PREFETCH:-0}" != "1" ]]; then
+    echo
+    echo "======================================================================"
+    echo "Prefetching Qwen/Qwen2.5-7B-Instruct into HF_HOME (login node)"
+    echo "======================================================================"
+    # snapshot_download will re-use existing cache entries and only fetch missing files.
+    python - <<'PY'
+import os, sys, time
+from huggingface_hub import snapshot_download
+start = time.time()
+path = snapshot_download(
+    repo_id="Qwen/Qwen2.5-7B-Instruct",
+    allow_patterns=[
+        "*.json", "*.txt", "*.model", "*.safetensors",
+        "tokenizer*", "vocab.json", "merges.txt",
+    ],
+    max_workers=8,
+)
+print(f"OK: cached at {path}  ({time.time() - start:.0f}s)", file=sys.stderr)
+PY
+fi
+
+# -----------------------------------------------------------------------------
+# 4. Submit train + dependent eval per (arm, seed)
+# -----------------------------------------------------------------------------
+echo
+echo "======================================================================"
+echo "Submitting ${N_JOBS} train + ${N_JOBS} eval jobs"
+echo "======================================================================"
+
+submit() {
+    if [[ "${DRY_RUN:-0}" == "1" ]]; then
+        echo "  [dry-run] $*"
+        echo "DRY_$RANDOM"
+    else
+        sbatch --parsable "$@"
+    fi
+}
+
+TRAIN_IDS=()
+EVAL_IDS=()
+
+for arm in $ARMS; do
+    for seed in $SEEDS; do
         name="${arm}-s${seed}"
-        outdir="outputs/${arm}_seed${seed}"
+        outdir="${SCRATCH_OUT}/${arm}_seed${seed}"
         cfg="configs/experiments/${arm}.yaml"
+        mkdir -p "$outdir"
 
-        echo "→ submitting $name  (config=$cfg, seed=$seed, out=$outdir)"
+        echo
+        echo "→ $name"
+        echo "   config = $cfg"
+        echo "   outdir = $outdir"
 
-        JID=$(sbatch --parsable \
+        JID=$(submit \
             -p gh \
             --time=05:00:00 \
             -J "$name" \
@@ -59,11 +182,10 @@ for arm in "${ARMS[@]}"; do
                 "output_dir=${outdir}" \
                 "run_name=${name}" \
                 "eval.policy_path=${outdir}")
-        JOBIDS+=("$JID")
-        echo "   train jid=$JID"
+        TRAIN_IDS+=("$JID")
+        echo "   train jid = $JID"
 
-        # Chain the eval job so it starts only after train is done.
-        EID=$(sbatch --parsable \
+        EID=$(submit \
             -p gh \
             --time=01:00:00 \
             -J "${name}-eval" \
@@ -74,13 +196,23 @@ for arm in "${ARMS[@]}"; do
                 "seed=${seed}" \
                 "output_dir=${outdir}" \
                 "eval.policy_path=${outdir}")
-        JOBIDS+=("$EID")
-        echo "   eval  jid=$EID  (depends on $JID)"
+        EVAL_IDS+=("$EID")
+        echo "   eval  jid = $EID  (depends on ${JID})"
     done
 done
 
+# -----------------------------------------------------------------------------
+# 5. Summary
+# -----------------------------------------------------------------------------
 echo
-echo "Submitted ${#JOBIDS[@]} jobs."
-echo "Watch with:   squeue -u \$USER --sort=+i"
-echo "When all jobs are complete, aggregate with:"
+echo "======================================================================"
+echo "Submitted ${#TRAIN_IDS[@]} train jobs and ${#EVAL_IDS[@]} eval jobs"
+echo "======================================================================"
+echo
+echo "Watch progress:"
+echo "  squeue -u \$USER --sort=+i"
+echo
+echo "When all jobs complete (or as they trickle in), aggregate:"
 echo "  bash slurm/phase2_summarize.sh"
+echo
+echo "Results will land under: $SCRATCH_OUT/{arm}_seed{S}/eval_results.json"

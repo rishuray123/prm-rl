@@ -577,9 +577,19 @@ pulled and run):
 - **`slurm/phase2_sweep.sh`** — sbatch fan-out for 6 arms × 3 seeds
   = 18 jobs on `gh`. Each arm's eval is chained via
   `--dependency=afterok:$train_jid` off its train job so wall time
-  is per-arm, not global.
-- **`slurm/phase2_summarize.sh`** — aggregates the 18 eval
-  `eval_results.json` files into `outputs/phase2_summary.md`.
+  is per-arm, not global. Pre-flight checks that Phase 1.5 artefacts
+  (`data/golden_v2`, `data/prm_v2`, `outputs/prm_v2`) exist, sources
+  `env_caches.sh`, and prefetches Qwen2.5-7B into `HF_HOME` on the
+  login node so the 18 GPU jobs don't race the same 14 GB download.
+  **Outputs go to `$SCRATCH/prm-rl-outputs/{arm}_seed{S}/`** — 18
+  × 14 GB of 7B checkpoints would blow through `$WORK`'s quota
+  otherwise (§2.8). Logs stay in `$WORK/prm-rl/logs/` (text, cheap).
+- **`slurm/phase2_summarize.sh`** — reads
+  `$SCRATCH/prm-rl-outputs/{arm}_seed{S}/eval_results.json` and
+  writes the aggregated markdown table to
+  `$WORK/prm-rl/outputs/phase2_summary.md`. Safe to run before every
+  seed has finished: missing seeds print a WARN and are simply left
+  out.
 
 **Iteration cadence going forward:**
 
