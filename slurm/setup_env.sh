@@ -45,9 +45,24 @@ pip install "flash-attn>=2.6" --no-build-isolation || true
 # invokes the wrong interpreter. Load modules BEFORE activating the venv
 # (see the printed instructions and slurm/_common.sh).
 cat > "$VENV/vista_env.sh" <<EOF
-export HF_HOME="$HF_CACHE_ROOT"
-export HF_DATASETS_CACHE="$HF_CACHE_ROOT/datasets"
-export TRANSFORMERS_CACHE="$HF_CACHE_ROOT/transformers"
+# Cache-dir redirection: keep everything off of /home1 (23 GB quota).
+# Mirrors slurm/env_caches.sh — both should stay in sync. See
+# docs/knowledge-base.md §2.9.
+_prmrl_cache_root="\${SCRATCH}/prm-rl-caches"
+export HF_HOME="\${HF_HOME:-\${_prmrl_cache_root}/huggingface}"
+export HF_HUB_CACHE="\${HF_HUB_CACHE:-\${HF_HOME}/hub}"
+export HF_DATASETS_CACHE="\${HF_DATASETS_CACHE:-\${HF_HOME}/datasets}"
+export TRANSFORMERS_CACHE="\${TRANSFORMERS_CACHE:-\${HF_HOME}/transformers}"
+export TRITON_CACHE_DIR="\${TRITON_CACHE_DIR:-\${_prmrl_cache_root}/triton}"
+export XDG_CACHE_HOME="\${XDG_CACHE_HOME:-\${_prmrl_cache_root}/xdg}"
+export PIP_CACHE_DIR="\${PIP_CACHE_DIR:-\${_prmrl_cache_root}/pip}"
+export MPLCONFIGDIR="\${MPLCONFIGDIR:-\${_prmrl_cache_root}/matplotlib}"
+export TORCHINDUCTOR_CACHE_DIR="\${TORCHINDUCTOR_CACHE_DIR:-\${_prmrl_cache_root}/torchinductor}"
+mkdir -p "\$HF_HOME" "\$HF_HUB_CACHE" "\$HF_DATASETS_CACHE" \\
+    "\$TRANSFORMERS_CACHE" "\$TRITON_CACHE_DIR" "\$XDG_CACHE_HOME" \\
+    "\$PIP_CACHE_DIR" "\$MPLCONFIGDIR" "\$TORCHINDUCTOR_CACHE_DIR"
+unset _prmrl_cache_root
+
 export TOKENIZERS_PARALLELISM=false
 export PRMRL_HOME="$REPO_ROOT"
 EOF

@@ -199,7 +199,61 @@ cuda python3` before doing anything else on the compute node.
 
 Allocation: `ASC26008` (9504 SUs remaining as of 2026-07-24).
 
-### 2.8 Vista snapshot
+### 2.8 ⚠️ /home1 quota bites HuggingFace *and* Triton — redirect BOTH
+
+**Symptom:** during any HF-backed run (train_rl, train_prm, ...):
+
+```
+Could not cache non-existence of file. Will ignore error and continue.
+  Error: [Errno 122] Disk quota exceeded:
+  '/home1/<uid>/<user>/.cache/huggingface/hub/models--Qwen--...'
+
+OSError: [Errno 122] Disk quota exceeded:
+  '/home1/<uid>/<user>/.triton/cache/NPF46G6E5C4DAGWSQ5FWMRFU7SVQ3RFRWWFS74W6L4F5KPLMJXBA'
+```
+
+Second one comes from Triton, mid-GRPO, during the first
+`self.rotary_emb(...)` call — Triton JIT-compiles a kernel and tries
+to write the cached artefact to `~/.triton/cache/*`, which fails
+under quota.
+
+**Root cause:** Vista's `/home1` is ~23 GB and typically half-full
+before you land. HF caches are ~3 GB per open-weights model; Triton
+kernels are small individually but proliferate. `HF_HOME` alone is
+not enough — `TRITON_CACHE_DIR` is a separate variable, as are
+`XDG_CACHE_HOME`, `PIP_CACHE_DIR`, `MPLCONFIGDIR`, and
+`TORCHINDUCTOR_CACHE_DIR`.
+
+**Fix (permanent, code):** `slurm/env_caches.sh` sets *all* of these
+to sit under `$SCRATCH/prm-rl-caches/`. It is sourced by
+`_common.sh`, `iter_all_arms.sh`, and `smoke_all_arms.sh`.
+`setup_env.sh` also bakes the same exports into `vista_env.sh` for
+manual sessions.
+
+**Fix (one-shot, existing caches):** `slurm/fix_home_quota.sh`
+rsyncs `~/.cache/{huggingface,pip,torch,matplotlib,wandb}` and
+`~/.triton` into `$SCRATCH/prm-rl-caches/home-mirror/*` and symlinks
+the home paths back, so a partially-downloaded 3 GB Qwen checkpoint
+isn't lost. Run once after hitting this error, then future writes
+will land in `$SCRATCH` directly via the env vars above.
+
+**Correct incantation for a fresh interactive session on Vista:**
+
+```bash
+module reset && module load gcc cuda python3
+source $SCRATCH/venvs/prm-rl/bin/activate
+source $SCRATCH/venvs/prm-rl/vista_env.sh    # ← was missing; sets HF/Triton dirs
+# Sanity:
+env | grep -E '^(HF_HOME|TRITON_CACHE_DIR|XDG_CACHE_HOME)='
+```
+
+The `source vista_env.sh` step was missing from earlier runbooks; if
+you skip it, all caches end up in `$HOME`. `slurm/iter_all_arms.sh`
+and friends now source `slurm/env_caches.sh` explicitly, so even a
+partially-configured shell can't leak into `$HOME` if the driver is
+used.
+
+### 2.9 Vista hardware snapshot
 
 - Node: `c610-XXX` GH200 (Grace ARM CPU + H200 GPU, 120 GB HBM — note **not** the 480 GB variant seen in some GH200 SKUs).
 - OS: Rocky 9.7 (per the 2026-02-12 admin notice in the motd).

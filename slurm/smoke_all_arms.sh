@@ -38,6 +38,12 @@ if [[ -z "${VIRTUAL_ENV:-}" ]]; then
     echo "      abort now — this is the trap documented in KB §2.2." >&2
 fi
 
+# Redirect HF / Triton / pip / matplotlib caches to $SCRATCH (KB §2.9).
+_this_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$_this_dir/env_caches.sh"
+unset _this_dir
+
 mkdir -p logs data outputs
 
 echo "======================================================================"

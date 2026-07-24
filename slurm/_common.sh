@@ -14,6 +14,15 @@ if [[ -f "$VENV/vista_env.sh" ]]; then
     source "$VENV/vista_env.sh"
 fi
 
+# Redirect every cache dir off /home1 (quota is tiny). Belt-and-braces
+# with vista_env.sh above — safe to source both.
+_this_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$_this_dir/env_caches.sh" ]]; then
+    # shellcheck disable=SC1091
+    source "$_this_dir/env_caches.sh"
+fi
+unset _this_dir
+
 export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
 export WANDB_MODE=${WANDB_MODE:-disabled}
