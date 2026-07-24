@@ -430,13 +430,158 @@ Commits landed today (post-smoke):
 
 | SHA        | Summary                                                          |
 |------------|------------------------------------------------------------------|
-| _pending_  | Add PRM + Arm 2..6 smoke configs, driver, summarizer, KB update  |
+| `a20b5b4`  | Add PRM + Arm 2..6 smoke configs, driver, summarizer, KB update  |
+
+### 2026-07-25 — All-arms smoke result on Vista GH200
+
+Full driver ran end-to-end in ~35 min on `c610-001[gh]`. NLI model
+for Arm 4 downloaded cleanly on first use.
+
+| arm  | accuracy | process_correctness | avg_tokens | avg_steps | avg_self_rougeL | exploit_rate | trap_solve_rate | CRHS  |
+|------|----------|---------------------|------------|-----------|-----------------|--------------|-----------------|-------|
+| arm1 | 0.400    | N/A                 | 146.6      | 4.50      | 0.160           | 0.40         | 0.40            | 0.485 |
+| arm2 | 0.250    | 1.000               | 160.7      | 6.55      | 0.236           | 0.40         | 0.40            | 0.474 |
+| arm3 | 0.350    | 1.000               | 169.3      | 6.75      | 0.235           | 0.40         | 0.20            | 0.466 |
+| arm4 | 0.400    | 1.000               | 151.8      | 5.95      | 0.204           | 0.20         | 0.40            | 0.553 |
+| arm5 | 0.250    | 1.000               | 142.9      | 5.40      | 0.207           | 0.40         | 0.20            | 0.485 |
+| arm6 | 0.400    | 1.000               | 142.7      | 4.30      | 0.153           | 0.60         | 0.40            | 0.415 |
+
+**What this tells us (real signals):**
+
+1. **Every arm's pipeline works on Vista.** Zero blockers to scaling up.
+2. **`process_correctness = 1.000` for arms 2/2/4/6** — exactly as the
+   `prm_smoke.yaml` caveat predicted. The PRM trained on
+   `gsm8k_native` (label=1 only) collapsed to outputting ~1.0 for
+   every step. This is a diagnostic signal that our PRM is useless,
+   not a training signal. Fixing this is [§6.4] / [§7.1].
+3. **Arm 1 dropped from 0.45 → 0.40** between the two runs with
+   identical config — GRPO's default sampling is stochastic
+   (`num_generations=4`, `temperature=0.9`). This is our concrete
+   evidence that a single-seed n=20 eval has huge run-to-run variance;
+   fixing this needs multiple seeds *and* larger n_test.
+
+**What this does NOT tell us (must not be interpreted as science):**
+
+- **Arm 4 (contradiction) looks best with CRHS 0.553 and lowest
+  exploit rate 0.20.** Tempting to celebrate, but at n=5 traps a
+  single flip = 0.20 change; and the contradiction reward hasn't seen
+  a discriminating PRM anyway. Don't cite this.
+- **Arm 6 (hybrid) looks worst with exploit_rate 0.60.** Same caveat.
+- **Arms 2 and 5 dropped to 0.25 accuracy.** Consistent with 10 steps
+  of GRPO on a mostly-uniform reward moving the policy off its
+  instruction-tuned prior in an unhelpful direction; but at n=20 with
+  ±22 pp CIs this is suggestive at best.
+
+**Bottom line:** smoke phase is complete. All findings above are
+"pipeline works" grade, not "publishable" grade. Move on to Phase 2
+(§7) for the real experiments.
+
+Commits landed for the all-arms smoke result:
+
+| SHA        | Summary                                                    |
+|------------|------------------------------------------------------------|
+| _pending_  | Log first all-arms smoke result table + phase 2 plan       |
 
 ---
 
-## 6. Open issues / next steps
+## 6. Phase 2 — plan for the first thesis-grade run
 
-### 6.1 Bump `setup_env.sh` torch install to use cu126 by default
+**Goal:** produce Arm 1..6 numbers that can actually be compared and
+cited. Blockers, in dependency order:
+
+### 6.1 Fix the PRM training data (P0 — blocks everything downstream)
+
+The smoke PRM trained on `gsm8k_native` yields `process_correctness =
+1.000` for every arm (§5, 2026-07-25 result table). Until we have a
+PRM that discriminates correct from incorrect steps, arms 2 / 3 / 4 /
+6 rewards are near-uniform and GRPO gets almost no signal.
+
+Two viable paths (pick one):
+
+- **`strategy='teacher'`** — sample multiple reasoning traces from a
+  teacher LLM (e.g. Qwen2.5-72B or GPT-4-class), keep the one whose
+  final answer matches gold, mark steps in wrong-answer traces as
+  negatives. Requires teacher API/model access.
+- **Synthetic negatives** — cheapest to try first. Extend
+  `src/prm_rl/data/prm_data.py::build_prm_dataset` with an
+  `inject_negatives_prob: float` kwarg that, per row, appends a
+  wrong-step continuation (e.g. arithmetic mutation, "therefore
+  <random number>") with label=0. Matches the notebook's cell-13
+  trick, but at package level.
+
+Recommended: implement synthetic negatives first (self-contained,
+~30 LOC), retrain PRM at scale, measure PRM val F1. Only add teacher
+distillation if val F1 stays below ~0.7.
+
+### 6.2 Scale the RL runs (P1)
+
+Once PRM is discriminating, re-run each arm at real scale on `gh`
+(48 h queue, 1 SU/hr per H200 hour):
+
+| Knob                  | Smoke | Phase 2 target |
+|-----------------------|-------|----------------|
+| Policy                | Qwen2.5-1.5B | Qwen2.5-7B-Instruct |
+| SFT stage             | skipped      | 2 epochs on n=2000 golden |
+| Golden n              | 64           | 2000                      |
+| GRPO `max_steps`      | 10           | 500 (later 2000)          |
+| GRPO `n_generations`  | 4            | 8                         |
+| GRPO batch size       | 2            | 4 × grad_accum 4          |
+| Seeds per arm         | 1            | 3                         |
+| Eval `n_test`         | 20           | 500                       |
+| Trap prompts          | 5            | 30+ (needs authoring)     |
+
+Expected cost per arm: ~2–4 H200 hours = ~2–4 SUs. 6 arms × 3 seeds ×
+3 SUs ≈ **~54 SUs total for one full sweep.** We have 9504 SUs on
+`ASC26008`, so plenty of headroom for multiple sweeps.
+
+Submission pattern:
+
+```bash
+for arm in arm1_outcome arm2_naive_process arm3_prefix_consistency \
+           arm4_contradiction arm5_counterfactual arm6_hybrid; do
+    for seed in 42 43 44; do
+        sbatch --time=04:00:00 -p gh -J "${arm}-s${seed}" slurm/rl.slurm \
+            "configs/experiments/${arm}.yaml" \
+            "seed=${seed}" \
+            "output_dir=outputs/${arm}_seed${seed}"
+    done
+done
+```
+
+### 6.3 Add authored trap prompts (P1)
+
+Current `data/traps/trap_examples.json` has 5 hand-crafted scenarios
+(4 kinds: `impossible`, `underspecified`, `shortcut`,
+`adversarial`). Grow to 30+ so `exploit_rate` has decimals of
+resolution finer than 0.20. Balance across the 4 kinds so per-kind
+breakdowns are possible.
+
+### 6.4 Wire in faithfulness / CMA offline probes (P2)
+
+`evaluation/faithfulness.py` (paired counterfactual, produces `phi_cct`)
+and `evaluation/cma.py` (causal mediation, produces `NIE`) already
+exist but aren't chained into `evaluate.py`. In Phase 2:
+
+1. After every arm's RL train, run `scripts/faithfulness_probe.py`
+   (helper referenced in `evaluate.py` docstring — needs to be
+   written) on a fixed paired-intervention set.
+2. Save `cct.json` / `cma.json` alongside the checkpoint.
+3. Rerun `evaluate.py` with `--override eval.cct_json=... eval.cma_json=...`.
+
+Both are needed for the "not just accuracy" side of the composite
+reward-hacking score to actually reflect faithfulness rather than
+being clamped to 0.
+
+### 6.5 Add CI (P3)
+
+`.github/workflows/tests.yml` — matrix Python 3.10/3.11, cache pip,
+run the 21 unit tests. Trivial to add; currently missing.
+
+---
+
+## 7. Historical open issues (kept for context)
+
+### 7.1 Bump `setup_env.sh` torch install to use cu126 by default
 
 Current script still uses `--index-url https://download.pytorch.org/whl/cu124`.
 On fresh Vista venvs that gives torch 2.5.1 (highest aarch64 wheel on
@@ -446,39 +591,3 @@ currently need the cu126 workaround.
 Suggested change: pin to cu126 in `setup_env.sh` with a comment
 citing this doc. Only defer if we have a reason to keep cu124 (we
 don't right now).
-
-### 6.2 First real Arm 1 result on Vista
-
-After the smoke passes, run a larger Arm 1 configuration and record
-the `eval_results.json` here for baseline comparison against future
-arms:
-
-```bash
-sbatch --time=04:00:00 --job-name=arm1-full -p gh slurm/rl.slurm \
-    configs/experiments/arm1_smoke.yaml \
-    model.name=Qwen/Qwen2.5-7B-Instruct \
-    training.max_steps=500 \
-    data.n=2000 \
-    output_dir=outputs/arm1_qwen7b
-```
-
-### 6.3 CI
-
-`.github/workflows/tests.yml` still not added. When we do, target
-Python 3.10 + 3.11 and cache pip. The 21 unit tests are pure Python
-and take ~2 min in total.
-
-### 6.4 Better golden-set strategy
-
-Move from `strategy='gsm8k_native'` to `'teacher'` or `'verifier'` once
-we have an oracle model. That's when the PRM starts seeing genuine
-negative steps and Arms 2 / 3 / 4 / 6 become discriminating instead of
-trivially maxing out.
-
-### 6.5 Faithfulness / CMA offline probes
-
-`evaluation/faithfulness.py` and `evaluation/cma.py` exist but aren't
-wired into any pipeline yet. Once we have real trained checkpoints,
-run them on a paired-intervention set and feed the resulting Phi-CCT /
-NIE numbers back into `composite_reward_hacking_score` (currently
-passed as `0.0`).
