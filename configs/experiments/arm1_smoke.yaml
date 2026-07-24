@@ -1,0 +1,63 @@
+# Arm 1 — end-to-end SMOKE TEST for TACC Vista.
+#
+# Purpose: verify the full RL pipeline (model load -> GRPO w/ outcome
+# reward -> save -> eval) runs on a single H200 gh-dev node in <45 min
+# with a "meaningfully bigger" policy than the Colab quickstart (135M).
+#
+# Bumping this to a real run is a two-liner: set model.name to a larger
+# checkpoint and raise max_steps / n. See slurm/README.md.
+
+seed: 42
+run_name: arm1_smoke
+output_dir: outputs/arm1_smoke
+
+model:
+  # ~1.5B params -> ~3 GB in bf16, loads in <30s on H200 (96 GB HBM3).
+  # Big enough to actually exercise the GPU; small enough that 10 GRPO
+  # steps complete in a few minutes.
+  name: Qwen/Qwen2.5-1.5B-Instruct
+  dtype: bf16
+  device_map: auto
+  attn_implementation: null
+  load_in_4bit: false
+
+data:
+  split: train
+  subset: main
+  n: 64                    # tiny slice, enough for GRPO to see variety
+  golden_path: data/golden # unused by Arm 1 (outcome reward only)
+
+training:
+  num_train_epochs: 1
+  max_steps: 10            # ~5 min end-to-end on H200
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 2
+  learning_rate: 5.0e-6
+  lr_scheduler_type: constant
+  warmup_ratio: 0.0
+  logging_steps: 1         # every step visible in the smoke log
+  save_strategy: 'no'      # single save at end via trainer.save_model()
+  save_total_limit: 1
+  bf16: true
+  gradient_checkpointing: true
+  num_generations: 4
+  max_completion_length: 256
+  temperature: 0.9
+  top_p: 1.0
+  beta: 0.04
+  report_to: [none]
+
+rewards:
+  - name: outcome
+    weight: 1.0
+
+eval:
+  policy_path: outputs/arm1_smoke
+  # PRM omitted on purpose — Arm 1 doesn't use one, and skipping the PRM
+  # scoring keeps this pass under the 45-min gh-dev budget.
+  traps_path: data/traps/trap_examples.json
+  n_test: 20
+  gen_batch_size: 8
+  max_new_tokens: 256
+  temperature: 0.0
+  verbosity_baseline: 150.0
