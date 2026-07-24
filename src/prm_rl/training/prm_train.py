@@ -77,6 +77,14 @@ def run_prm(cfg: DictConfig) -> str:
     tokenizer = AutoTokenizer.from_pretrained(cfg.model.name)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    # The training text is "Problem: ... step_1 ... step_i-1 step_i"
+    # with the label-carrying step at the TAIL. HF tokenizers default
+    # to truncation_side='right', which drops the tail when a sequence
+    # exceeds max_length — making positive/negative pairs (which
+    # differ only at the tail) look identical to the model. Force
+    # left-truncation so we always keep the discriminative step.
+    # See docs/knowledge-base.md §6.1.
+    tokenizer.truncation_side = "left"
     model = AutoModelForSequenceClassification.from_pretrained(cfg.model.name, num_labels=2)
 
     tok_fn = _tokenize(

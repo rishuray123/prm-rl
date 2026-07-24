@@ -57,6 +57,11 @@ def load_prm(
     tok = AutoTokenizer.from_pretrained(model_name_or_path)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
+    # The current step is at the TAIL of the input text (see
+    # prm_data.build_prm_dataset). Right-truncation drops it and
+    # collapses positive/negative pairs into the same tokens; force
+    # left-truncation to mirror training. Documented in KB §6.1.
+    tok.truncation_side = "left"
     # DeBERTa-v3's disentangled-attention numerically diverges to NaN
     # in fp16 forward passes on H200/A100 (a well-known upstream
     # issue). HF Trainer with `bf16=True` writes checkpoints whose

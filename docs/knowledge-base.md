@@ -4,7 +4,7 @@
 > target platforms goes here so we don't rediscover it. Maintained by
 > the Cursor agent per user request; edit freely.
 >
-> **Last updated:** 2026-07-25 (Phase 1.5 diagnosed: PRM was NaN'ing in fp16 on H200 → §2.9 + `load_prm` fp32 fix)
+> **Last updated:** 2026-07-25 (PRM v2 diagnosed: fp16-NaN + backbone-collapse; retrain hyperparams landed, see §6.1)
 
 ---
 
@@ -700,18 +700,44 @@ Recommended: implement synthetic negatives first (self-contained,
 ~30 LOC), retrain PRM at scale, measure PRM val F1. Only add teacher
 distillation if val F1 stays below ~0.7.
 
-**STATUS (2026-07-25):** Path A (synthetic negatives) is **landed in
-code, not yet run on Vista**. See the 2026-07-25 session log entry
-for the file list. Four negative kinds are supported
-(`arithmetic_mutation`, `operator_swap`, `fabricated_conclusion`,
-`duplicate_prev_step`), deterministic under fixed seed, exposed via
-both `build_prm_dataset(...)` kwargs and the
-`--inject_negatives_prob` CLI flag on `build_prm_data`. YAML plumbing
-(`data.inject_negatives_prob` etc.) is live in `prm_train.py`. Next
-action is to run `slurm/iter_all_arms.sh` and confirm `PRM v2` gets
-val F1 ≥ 0.7 and that `process_correctness` in
-`outputs/iter_summary.md` is no longer stuck at 1.000. If val F1 <
-0.7 after Path A, escalate to Path B.
+**STATUS (2026-07-25):** Path A (synthetic negatives) is landed in
+code and has been run twice. Both attempts produced a PRM that
+**did not learn to discriminate**, for two overlapping reasons:
+
+1. **fp16 NaN at inference (see §2.9)** — hidden the failure of (2)
+   behind an even more catastrophic failure. Fixed by defaulting
+   `load_prm` to fp32.
+2. **Backbone converged to the class prior** — see run 1's trainer
+   log (`eval_f1 = 0.834`, `eval_loss = 0.598`) which exactly matches
+   a constant-positive classifier on a 71%-positive dataset. Post-fix
+   probe confirmed every input produced `pred = 0.719 ≈ pos_frac`.
+   Contributing factors and fixes:
+   - **Right-side truncation** dropped the tail (=current step) on
+     any long input, making positive/negative pairs indistinguishable
+     to the model.
+     Fix: `tokenizer.truncation_side = "left"` in both `prm_train.py`
+     and `load_prm()` in `prm.py`.
+   - **`max_length=1024` on a model whose native buffer is 512** ran
+     the disentangled attention on positions it was never trained on.
+     Fix: `max_length: 512` in `configs/experiments/prm_v2.yaml`.
+   - **`bf16: true` on a small classifier** underflowed classifier
+     gradients into zero — the classifier bias moved to the prior
+     and stayed there.
+     Fix: `bf16: false` (fp32 training) in `prm_v2.yaml`.
+   - **LR = 2e-5 for only 3 epochs** was too conservative to push
+     the backbone away from its init.
+     Fix: `learning_rate: 5.0e-5`, `num_train_epochs: 5`.
+
+**Success criterion tightened:** val F1 ≥ 0.7 is *not* sufficient —
+on this dataset a constant-positive classifier already scores 0.83.
+The PRM must also pass the smoke probe in §2.9 (positives > 0.6,
+negatives < 0.4 on training examples). Only then is it safe to
+promote to Phase 2.
+
+Next action: rerun `python -m prm_rl.scripts.train_prm --config
+configs/experiments/prm_v2.yaml` (or `slurm/iter_all_arms.sh` from
+stage 3 onward), then rerun the §2.9 probe. If discrimination still
+collapses, escalate to Path B (teacher distillation).
 
 ### 6.2 Scale the RL runs (P1)
 

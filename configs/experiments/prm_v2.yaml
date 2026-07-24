@@ -38,18 +38,35 @@ data:
   max_negatives_per_example: 2
 
 training:
-  num_train_epochs: 3
+  # Hyperparameter changes from the first PRM v2 run (which collapsed
+  # to the class prior — see docs/knowledge-base.md §2.9 for the
+  # NaN-in-fp16 half of the story and §6.1 for the never-learned half):
+  #   epochs 3 -> 5              (backbone needed more updates)
+  #   lr 2e-5 -> 5e-5            (weak signal; higher lr for DeBERTa)
+  #   bf16 true -> false         (mixed precision underflow → backbone
+  #                               couldn't move off the class prior)
+  #   max_length 1024 -> 512     (match DeBERTa-v3-base's native
+  #                               positional buffer; sequences between
+  #                               512 and 1024 were producing
+  #                               out-of-range positions)
+  #   + tokenizer.truncation_side='left' (set in prm_train.py) so long
+  #     inputs preserve the *current* step at the tail instead of
+  #     losing it to right-side truncation, which made positive/
+  #     negative pairs indistinguishable.
+  num_train_epochs: 5
   per_device_train_batch_size: 16
   per_device_eval_batch_size: 32
-  learning_rate: 2.0e-5
+  learning_rate: 5.0e-5
   weight_decay: 0.01
   warmup_ratio: 0.06
   logging_steps: 20
-  bf16: true
-  max_length: 1024
+  bf16: false
+  max_length: 512
   gradient_checkpointing: false
   report_to: [none]
 
-  # Success criterion for Phase 2 gating (§6.1): val F1 >= 0.7.
-  # If val F1 stays below this after 3 epochs we escalate to Path B
-  # (teacher distillation, `strategy='teacher'` in build_golden.py).
+  # Success criterion for Phase 2 gating (§6.1): val F1 >= 0.7 AND the
+  # PRM must actually discriminate (positives >0.6, negatives <0.4 on
+  # the smoke probe in KB §2.9). F1 alone is not sufficient — on a
+  # 71%-positive dataset the "always predict positive" baseline
+  # already gets F1 = 0.83.
