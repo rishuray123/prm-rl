@@ -31,7 +31,8 @@ bash slurm/setup_env.sh
 
 ```bash
 idev -p gh-dev -N 1 -n 1 -t 01:00:00
-source $SCRATCH/venvs/prm_rl/bin/activate
+source $SCRATCH/venvs/prm-rl/bin/activate
+source $SCRATCH/venvs/prm-rl/vista_env.sh
 python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 
