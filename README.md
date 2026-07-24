@@ -10,6 +10,10 @@ plan reduces to a different combination of reward functions plugged into
 `trl.GRPOTrainer`, and everything else (SFT, PRM training, evaluation) uses stock TRL /
 HF `Trainer` APIs.
 
+> **New here?** Read [`docs/knowledge-base.md`](docs/knowledge-base.md) first — it's
+> a living doc of every non-obvious codebase convention, TACC Vista gotcha, version
+> pin, and past session summary. Grep it before debugging.
+
 ## What lives where
 
 ```
