@@ -27,7 +27,15 @@ run_name: prm_v2
 output_dir: outputs/prm_v2
 
 model:
-  name: microsoft/deberta-v3-base
+  # Switched from microsoft/deberta-v3-base to distilbert-base-uncased
+  # after three failed attempts with DeBERTa-v3 (KB §6.1 attempts 1-3):
+  # its disentangled-attention forward pass is numerically fragile in
+  # both fp16 (NaN in load_prm inference) and fp32 (NaN gradients
+  # during training even at lr=2e-5 with tight clipping + label
+  # smoothing). DistilBERT has no disentangled attention, uses standard
+  # scaled-dot-product attention, and fp32-trains reliably with the
+  # default HF hyperparameters. 66M params trains in ~4-6 min on H200.
+  name: distilbert-base-uncased
 
 data:
   golden_path: data/golden_v2
@@ -38,33 +46,29 @@ data:
   max_negatives_per_example: 2
 
 training:
-  # Iteration history of PRM v2 hyperparameters (see KB §6.1 for the
-  # full narrative — this is the third attempt):
+  # Iteration history (all on microsoft/deberta-v3-base):
+  #   Attempt 1 (lr=2e-5, bf16=true, max_length=1024, right-trunc):
+  #     classifier collapsed to prior (pred=0.719 constant).
+  #   Attempt 2 (lr=5e-5, fp32, max_length=512, left-trunc):
+  #     loss started dropping then grad NaN'd at step 5 (lr≈2.9e-5).
+  #   Attempt 3 (lr=2e-5, fp32, warmup 10%, grad clip 0.5, label
+  #              smoothing 0.05, same truncation/max_length as #2):
+  #     grad NaN'd at step 12 (lr≈1.7e-5).
   #
-  #   Attempt 1: lr=2e-5, bf16=true, max_length=1024, right-truncation
-  #   → CLASSIFIER COLLAPSED TO PRIOR (pred=0.719 for every input).
-  #     bf16 underflowed classifier gradients; right truncation dropped
-  #     the label-carrying step; max_length exceeded DeBERTa's native
-  #     buffer. All three fixed in attempt 2.
-  #
-  #   Attempt 2: lr=5e-5, bf16=false, max_length=512, left-truncation
-  #   → GRADIENTS NaN'd AT STEP 5 (grad_norm=nan around lr=2.9e-5).
-  #     fp32 correctly allowed backbone movement (loss dropped from
-  #     0.65 → 0.60 in the first 4 steps) but DeBERTa-v3's disentangled
-  #     attention is numerically fragile above ~3e-5 in fp32.
-  #
-  #   Attempt 3 (this config): keep fp32 + max_length + left-truncation
-  #   from attempt 2, revert lr to 2e-5, extend warmup to 10%, add
-  #   tight grad clipping (max_grad_norm=0.5), and add mild label
-  #   smoothing (0.05) so the loss can't push logits to ±∞.
-  num_train_epochs: 5
+  # Attempt 4 (this config): abandoned DeBERTa-v3, switched model to
+  # distilbert-base-uncased above. Back to standard DistilBERT
+  # hyperparameters -- no need for the exotic clipping / smoothing
+  # / long-warmup gymnastics that couldn't stabilise DeBERTa. Still
+  # keep max_length=512 (native for both models) and left truncation
+  # in prm_train.py so the label-carrying step is preserved.
+  num_train_epochs: 3
   per_device_train_batch_size: 16
   per_device_eval_batch_size: 32
   learning_rate: 2.0e-5
   weight_decay: 0.01
-  warmup_ratio: 0.10
-  max_grad_norm: 0.5
-  label_smoothing_factor: 0.05
+  warmup_ratio: 0.06
+  max_grad_norm: 1.0
+  label_smoothing_factor: 0.0
   logging_steps: 20
   bf16: false
   max_length: 512

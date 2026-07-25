@@ -4,7 +4,7 @@
 > target platforms goes here so we don't rediscover it. Maintained by
 > the Cursor agent per user request; edit freely.
 >
-> **Last updated:** 2026-07-25 (PRM v2 diagnosed: fp16-NaN + backbone-collapse; retrain hyperparams landed, see §6.1)
+> **Last updated:** 2026-07-25 (PRM v2 switched to distilbert-base-uncased after DeBERTa-v3 failed 3 stability attempts, see §6.1)
 
 ---
 
@@ -701,8 +701,12 @@ Recommended: implement synthetic negatives first (self-contained,
 distillation if val F1 stays below ~0.7.
 
 **STATUS (2026-07-25):** Path A (synthetic negatives) is landed in
-code and has been run twice. Both attempts produced a PRM that
-**did not learn to discriminate**, for two overlapping reasons:
+code. Four attempts to train a working PRM v2 on
+`microsoft/deberta-v3-base` all failed for related but distinct
+reasons. Final resolution: **switched model to
+`distilbert-base-uncased`** (attempt 4 config). The DeBERTa-v3
+attempts are documented below because the story matters for the
+thesis's implementation section (§4.6):
 
 1. **fp16 NaN at inference (see §2.9)** — hidden the failure of (2)
    behind an even more catastrophic failure. Fixed by defaulting
@@ -738,6 +742,28 @@ Next action: rerun `python -m prm_rl.scripts.train_prm --config
 configs/experiments/prm_v2.yaml` (or `slurm/iter_all_arms.sh` from
 stage 3 onward), then rerun the §2.9 probe. If discrimination still
 collapses, escalate to Path B (teacher distillation).
+
+**Attempts 2, 3, 4 timeline (2026-07-25 afternoon):**
+
+* Attempt 2 (fp32 + lr=5e-5 + left-trunc + max_len=512):
+  grad_norm NaN'd at step 5 when the warmup ramp crossed lr≈2.9e-5.
+* Attempt 3 (attempt 2 + lr reverted to 2e-5, warmup 10%,
+  max_grad_norm=0.5, label_smoothing_factor=0.05): grad_norm NaN'd
+  again at step 12 (lr≈1.7e-5). Same disentangled-attention
+  fragility, just at a different lr threshold.
+* Attempt 4 (this config, current): swapped model to
+  `distilbert-base-uncased`. Standard DistilBERT hyperparams
+  (lr=2e-5, warmup 6%, no exotic clipping/smoothing). Fp32
+  training. 66M params vs 184M — trains in ~4-6 min on H200.
+  DistilBERT uses standard scaled-dot-product attention (no
+  disentangled matmul) so it doesn't have the fp32 stability
+  ceiling that killed attempts 2 and 3.
+
+Lesson for the thesis: not every "SOTA-ish" small classifier is
+robust as a PRM backbone. DeBERTa-v3 is state-of-the-art on GLUE
+but its disentangled attention creates a numerical fragility that
+matters more for downstream RL pipelines than for benchmark
+leaderboards.
 
 ### 6.2 Scale the RL runs (P1)
 
