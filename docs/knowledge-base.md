@@ -4,7 +4,7 @@
 > target platforms goes here so we don't rediscover it. Maintained by
 > the Cursor agent per user request; edit freely.
 >
-> **Last updated:** 2026-07-25 (Phase 1.5 iter complete; hybrid > baseline > direct-PRM arms confirms spec-gaming hypothesis, see §5 2026-07-25 entry)
+> **Last updated:** 2026-07-26 (Phase 2 sweep complete: H3 confirmed at 7B; direct-PRM arms collapse; hybrid≈baseline; see §5 2026-07-26 entry)
 
 ---
 
@@ -782,6 +782,73 @@ chains, not fewer.
 
 **Phase 2 launched:** `phase2_sweep.sh` at ~5:42 PM IST, 18 train
 + 18 eval jobs on gh queue. ETA ~3-4 h wallclock.
+
+### 2026-07-26 — Phase 2 sweep results (7B × 3 seeds)
+
+**Setup:** Qwen2.5-7B-Instruct, 500 GRPO steps, n_train=2000,
+n_test=500, num_generations=8, seeds {42,43,44}. PRM =
+DistilBERT-base-uncased (`outputs/prm_v2`). Outputs under
+`$SCRATCH/prm-rl-outputs/`. Aggregated via `phase2_summarize.sh`.
+
+**Per-arm mean ± std (n=3 seeds):**
+
+| arm | design | acc | proc_c | avg_tokens | avg_steps | self_rougeL | exploit | CRHS |
+|-----|--------|-----|--------|------------|-----------|-------------|---------|------|
+| arm1 | outcome | **0.861±0.008** | 0.987±0.001 | 222±23 | 7.0±0.3 | 0.291±0.005 | 0.27±0.12 | 0.459±0.034 |
+| arm2 | naive PRM | 0.571±0.281 | **0.995±0.008** | 246±63 | **14.9±5.8** | 0.255±0.162 | 0.33±0.23 | 0.412±0.129 |
+| arm3 | prefix PRM | 0.540±0.181 | **0.999±0.002** | **278±2** | **14.7±2.2** | **0.414±0.083** | 0.27±0.12 | 0.403±0.042 |
+| arm4 | contradiction | **0.869±0.006** | 0.991±0.005 | 210±43 | **1.9±0.3** | **0.023±0.010** | 0.27±0.12 | 0.472±0.066 |
+| arm5 | counterfactual | **0.862±0.017** | 0.985±0.003 | 208±20 | 7.0±0.3 | 0.287±0.006 | 0.27±0.12 | **0.474±0.021** |
+| arm6 | hybrid | **0.869±0.007** | 0.985±0.007 | 237±24 | 5.2±1.1 | 0.180±0.089 | 0.27±0.12 | 0.444±0.019 |
+
+Raw per-seed table in `outputs/phase2_summary.md`.
+
+**Pre-registered hypothesis verdicts:**
+
+| ID | Prediction | Verdict | Evidence |
+|----|------------|---------|----------|
+| H1 | arm6 > arm5 > arm4 > arm1 > arm2 > arm3 | **Partially confirmed** | Direct-PRM arms (2,3) clearly last. Top cluster is arm4 ≈ arm6 ≈ arm5 ≈ arm1 (all ~0.86–0.87); Phase 1.5's hybrid/counterfactual *advantage over baseline* does **not** replicate at 7B. |
+| H2 | exploit_rate for arms 2/3 grows | **Not confirmed** | All arms ~0.27±0.12 (n_traps=5 still coarse). Arm2 seed43 hit 0.60 but mean does not separate. |
+| H3 | proc≈1.0 and acc low for arms 2/3 | **Confirmed** | Arm2/3 mean proc 0.995/0.999 vs acc 0.57/0.54; proc−acc gap 0.42/0.46 vs arm1's 0.13. Behavioral correlates: arm3 tokens 278, rougeL 0.41; arm2 steps 14.9. Arm2 seed44 is an outlier (acc=0.89) that keeps the arm2 CI wide. |
+| H4 | CRHS separates; arm6 > 0.5 | **Not confirmed** | Best mean CRHS is arm5 (0.474); arm6 is 0.444. No arm's mean crosses 0.5. CRHS still partly default-clipped (Phi-CCT/NIE). |
+
+**Scientific story (cite-able at this scale):**
+
+1. **Primary result — PRM-as-sole-reward collapses under scale.**
+   Arms 2 and 3 lose ~30 accuracy points vs outcome baseline while
+   the PRM rates their steps as nearly perfect. This is the
+   specification-gaming signature at thesis grade (7B, 500 steps,
+   n_test=500, 3 seeds). Length/redundancy inflation co-occurs
+   (especially arm3).
+
+2. **Secondary result — composition does not beat outcome at 7B.**
+   Arms 5/6 match baseline accuracy (±1 pp) rather than beating it
+   as in Phase 1.5. Reading: at a strong instruction-tuned 7B prior,
+   outcome GRPO already saturates GSM8K (~86%); auxiliary process
+   signals neither help nor (when diluted) hurt. Mitigation claim
+   from Phase 1.5 must be downgraded to "composition *prevents*
+   collapse" rather than "composition *improves* over outcome."
+
+3. **Tertiary result — Arm 4 finds a different exploit.**
+   Accuracy matches baseline (0.869) but `avg_steps` collapses to
+   ~1.9 (vs ~7 for arm1) and self-ROUGE-L ≈ 0.02. The NLI
+   contradiction penalty is gamed by emitting near-single-step
+   answers (nothing left to contradict). High accuracy + collapsed
+   process is a *different* reward-hacking mode from arms 2/3.
+
+4. **Training instability of pure-PRM reward.** Arm2 seed variance
+   is extreme (acc 0.36 / 0.46 / 0.89). Pure process reward is an
+   unreliable optimisation target even when it occasionally lands.
+
+**Implications for Path B / next work:**
+- Path B (teacher-distilled semantic negatives) still motivated:
+  PRM blind spot remains the mechanism behind H3.
+- Trap set still too small (n=5) for H2 — expand before claiming
+  exploit_rate effects.
+- Offline probes (Phi-CCT, NIE) still needed before CRHS is
+  publication-grade.
+- Optional ablation: arm2/3 with outcome+PRM mixture to map the
+  collapse boundary.
 
 ---
 
