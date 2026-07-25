@@ -105,6 +105,12 @@ def run_prm(cfg: DictConfig) -> str:
         learning_rate=cfg.training.learning_rate,
         weight_decay=cfg.training.get("weight_decay", 0.01),
         warmup_ratio=cfg.training.get("warmup_ratio", 0.06),
+        # Tight grad clipping + mild label smoothing keep the fp32
+        # DeBERTa training from producing NaN gradients when a
+        # single-batch logit magnitude blows up (this is what killed
+        # attempt 2, see KB §6.1 attempt-3 rationale).
+        max_grad_norm=cfg.training.get("max_grad_norm", 1.0),
+        label_smoothing_factor=cfg.training.get("label_smoothing_factor", 0.0),
         eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
