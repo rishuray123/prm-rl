@@ -4,7 +4,7 @@
 > target platforms goes here so we don't rediscover it. Maintained by
 > the Cursor agent per user request; edit freely.
 >
-> **Last updated:** 2026-07-25 (PRM v2 switched to distilbert-base-uncased after DeBERTa-v3 failed 3 stability attempts, see §6.1)
+> **Last updated:** 2026-07-25 (PRM v2 on distilbert-base-uncased; hard-cap max_length at model.config.max_position_embeddings, see §2.9.1)
 
 ---
 
@@ -304,6 +304,47 @@ for i in pos + neg:
 Expected: positives should score ≥ 0.6, negatives ≤ 0.4. If any
 score is NaN, the model is still loading in fp16 — check
 `config.json`'s `dtype` field and `load_prm`'s `torch_dtype` argument.
+
+### 2.9.1 ⚠️ DistilBERT PRM crashes RL training at long completions
+
+**Symptom:** RL train job (any arm using PRM as a reward function)
+runs cleanly for the first N steps, then dies with:
+
+```
+File "src/prm_rl/models/prm.py", line 46, in score_steps
+    logits = self.model(**enc).logits
+File "transformers/models/distilbert/modeling_distilbert.py", line 117, in forward
+    embeddings = inputs_embeds + position_embeddings
+RuntimeError: The size of tensor a (520) must match the size of
+tensor b (512) at non-singleton dimension 1
+```
+
+**Root cause:** `PRMScorer.max_length` used to default to 1024 and
+`load_prm` never overrode it. Two things hid this until 2026-07-25:
+(1) PRM *training* uses short golden step chains that rarely exceed
+512 tokens; (2) DeBERTa-v3-base has a 1024-token buffer on top of
+its native 512 for the disentangled-attention relative-position
+bias, so it accidentally survived slightly-over-512 forward passes.
+DistilBERT-base has a *hard* `nn.Embedding(512, dim)` on its
+positional embeddings — no buffer, no fallback. As soon as an RL
+completion pushed the encoded `<question>\n\n<step_1>\n\n...\n\n<step_i>`
+context above 512 tokens, DistilBERT crashed.
+
+Reproducer during Phase 1.5 iter: arm 3 crashed at RL step 31 when
+`completions/mean_length` climbed to 384 chars (~500+ tokens of
+context by the last step).
+
+**Fix (code, no retrain required):** `load_prm` now reads
+`model.config.max_position_embeddings` and passes it to `PRMScorer`
+as `max_length`, so tokenization is capped at whatever the backbone
+can actually consume. Any future backbone (RoBERTa 512, ModernBERT
+8192, etc.) will pick up the correct cap automatically. `PRMScorer`'s
+own default was also lowered from 1024 to 512 as a belt-and-braces
+guard for direct constructions in tests.
+
+**Verification:** run `iter_all_arms.sh` on gh-dev. Arm 3 (which
+uses `prefix_consistency` and previously crashed at step 31) should
+now train to step 50 without RuntimeError.
 
 ### 2.10 Vista hardware snapshot
 

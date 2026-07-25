@@ -20,7 +20,11 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 class PRMScorer:
     model: torch.nn.Module
     tokenizer: any  # transformers tokenizer
-    max_length: int = 1024
+    # Default 512 (safe for both DistilBERT-base and DeBERTa-v3-base
+    # native position embeddings). load_prm() will read the model's
+    # actual `max_position_embeddings` and pass it explicitly so this
+    # default is a fallback for callers constructing PRMScorer directly.
+    max_length: int = 512
     device: str = "cpu"
     batch_size: int = 16
 
@@ -53,6 +57,7 @@ def load_prm(
     model_name_or_path: str,
     device: str = "cuda",
     torch_dtype: torch.dtype | None = None,
+    max_length: int | None = None,
 ) -> PRMScorer:
     tok = AutoTokenizer.from_pretrained(model_name_or_path)
     if tok.pad_token is None:
@@ -70,9 +75,9 @@ def load_prm(
     # Result: every prediction is NaN, downstream `process_correctness`
     # aggregates NaN → 0, and process-based reward signals during RL
     # training are silently zeroed.
-    # Force fp32 by default (DeBERTa-v3-base is only ~184M params,
-    # cost is negligible). Callers can override with bf16 on H200 if
-    # they want the extra throughput.
+    # Force fp32 by default (backbone models here are ≤184M params so
+    # the throughput cost is negligible). Callers can override with
+    # bf16 on H200 if they want the extra throughput.
     if torch_dtype is None:
         torch_dtype = torch.float32
     model = AutoModelForSequenceClassification.from_pretrained(
@@ -81,4 +86,23 @@ def load_prm(
         torch_dtype=torch_dtype,
     )
     model.eval().to(device)
-    return PRMScorer(model=model, tokenizer=tok, device=device)
+    # Cap tokenization at the model's actual positional buffer.
+    # DistilBERT-base has a HARD limit at max_position_embeddings=512
+    # (nn.Embedding(512, dim) with no buffer). Passing longer inputs
+    # crashes at `inputs_embeds + position_embeddings` with:
+    #   RuntimeError: The size of tensor a (520) must match the size
+    #                 of tensor b (512) at non-singleton dimension 1
+    # This is only reachable during RL training / eval when
+    # completions grow long — training on short golden step chains
+    # never hits it. DeBERTa-v3-base survived accidentally because
+    # its disentangled attention has a 1024-token buffer on top of
+    # native 512. Reading the cap from the model config makes this
+    # correct for any future backbone.
+    if max_length is None:
+        max_length = getattr(model.config, "max_position_embeddings", 512)
+    return PRMScorer(
+        model=model,
+        tokenizer=tok,
+        device=device,
+        max_length=max_length,
+    )
