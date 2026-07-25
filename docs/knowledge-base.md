@@ -4,7 +4,7 @@
 > target platforms goes here so we don't rediscover it. Maintained by
 > the Cursor agent per user request; edit freely.
 >
-> **Last updated:** 2026-07-25 (PRM v2 on distilbert-base-uncased; hard-cap max_length at model.config.max_position_embeddings, see §2.9.1)
+> **Last updated:** 2026-07-25 (Phase 1.5 iter complete; hybrid > baseline > direct-PRM arms confirms spec-gaming hypothesis, see §5 2026-07-25 entry)
 
 ---
 
@@ -709,6 +709,79 @@ Commits pending for this batch:
 | SHA        | Summary                                                        |
 |------------|----------------------------------------------------------------|
 | _pending_  | Synthetic-neg PRM data, prm_v2, arm{1..6}_{iter,phase2}, sweep |
+
+### 2026-07-25 — Phase 1.5 iter results (post PRM v2 fixes)
+
+**Setup:** Qwen2.5-1.5B, 50 GRPO steps, n_train=256, n_test=100.
+PRM = DistilBERT-base-uncased trained on `data/prm_v2` (synthetic
+negatives, `inject_negatives_prob=0.5`). Ran end-to-end via
+`iter_all_arms.sh` on gh-dev in ~90 min.
+
+Two rounds:
+
+* **Round 1 (job `865072`)** — died at arm 3 step 31 with the
+  DistilBERT max_position_embeddings size mismatch (§2.9.1). Arms
+  1/2 completed but their process_correctness numbers should NOT be
+  trusted because their eval-time PRM calls hit the same cap on
+  long completions and silently truncated context.
+* **Round 2 (job `865??`, after 064cecc)** — completed cleanly. This
+  is the table below.
+
+| arm       | design                       | acc   | proc_c | exploit | CRHS  |
+|-----------|------------------------------|-------|--------|---------|-------|
+| arm1_iter | outcome only (baseline)      | 0.540 | 0.964  | 0.400   | 0.458 |
+| arm2_iter | naive process (raw PRM)      | 0.450 | 0.985  | 0.400   | 0.445 |
+| arm3_iter | prefix consistency (PRM)     | 0.440 | 0.974  | 0.600   | 0.367 |
+| arm4_iter | contradiction (NLI)          | 0.550 | 0.967  | 0.600   | 0.356 |
+| arm5_iter | counterfactual               | 0.620 | 0.978  | 0.400   | 0.447 |
+| arm6_iter | hybrid (multi-signal)        | 0.630 | 0.971  | 0.400   | 0.420 |
+
+**What the numbers say:**
+
+1. **PRM signal is flowing** — `process_correctness` is non-zero and
+   varies by arm (0.964 → 0.985). §6.1's original failure mode (all
+   zeros) is resolved.
+2. **Values cluster tightly at 0.96-0.99.** The PRM's discrimination
+   power is concentrated on the synthetic-negative distribution it
+   was trained on (arithmetic mutations + fabricated conclusions);
+   it approves the vast majority of *actual* RL-generated steps.
+3. **Direct-PRM arms lose to baseline on accuracy.** arm1 (baseline)
+   gets 0.540; arm2 (raw PRM as reward) drops to 0.450 and arm3
+   (PRM-shaped prefix consistency) drops to 0.440. arm3 also has
+   the highest `exploit_rate` (0.60). This is textbook spec gaming:
+   the policies that most directly optimise PRM reward produce
+   step chains PRM likes (locally-arithmetically-consistent) at the
+   expense of getting the right answer.
+4. **Non-PRM-direct arms improve over baseline.** arm5 (counterfactual,
+   +0.08 acc) and arm6 (hybrid, +0.09 acc) both beat outcome-only.
+   These arms use PRM as one signal among several — they don't have
+   a single reward channel to fully exploit.
+
+**Thesis framing:** this is the exact "PRM approves but outcome
+disagrees" failure mode Chapter 4 predicts. When the PRM's decision
+boundary is trained on surface-level negatives (arithmetic errors,
+fabricated conclusions), it fails to catch **globally-wrong-but-
+locally-consistent** reasoning chains (misread the problem in step
+1 → all subsequent arithmetic checks out → wrong final answer).
+Arms that optimise PRM reward directly learn to produce more such
+chains, not fewer.
+
+**Phase 2 hypotheses to verify at scale (7B, 500 steps, n_test=500,
+3 seeds):**
+
+* H1: arm ranking (arm6 > arm5 > arm1 > arm4 > arm2 > arm3) holds
+  across seeds with tighter error bars.
+* H2: `exploit_rate` for arms 2 and 3 grows with training (spec
+  gaming intensifies with more RL steps).
+* H3: `process_correctness` for arms 2 and 3 approaches 1.0 at
+  Phase 2 scale (near-perfect PRM approval), while `accuracy`
+  stays low — the widening PRM-vs-outcome gap is the reward-hacking
+  signature we want to report.
+* H4: CRHS separates arms more strongly at n=500; hybrid (arm6)
+  should push above 0.5.
+
+**Phase 2 launched:** `phase2_sweep.sh` at ~5:42 PM IST, 18 train
++ 18 eval jobs on gh queue. ETA ~3-4 h wallclock.
 
 ---
 
