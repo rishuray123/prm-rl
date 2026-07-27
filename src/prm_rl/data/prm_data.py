@@ -12,8 +12,8 @@ and works with `trl.RewardTrainer` (or a plain HF classifier).
 Synthetic negatives
 -------------------
 Golden datasets built with `strategy='gsm8k_native'` have `label=1` on
-every step, so a PRM trained on them collapses to a constant `p ≈ 1.0`
-(see docs/knowledge-base.md §6.1). `build_prm_dataset` can inject
+every step, so a PRM trained on them collapses to a constant `p ≈ 1.0`.
+`build_prm_dataset` can inject
 synthetic negatives to give the PRM discriminative signal without a
 teacher model:
 

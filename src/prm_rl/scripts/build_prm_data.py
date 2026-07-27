@@ -3,7 +3,7 @@
 With `--inject_negatives_prob > 0` the builder also emits synthetic
 negatives per step (arithmetic mutations, operator swaps, fabricated
 conclusions, duplicated previous steps) so the PRM sees real gradient
-signal. See docs/knowledge-base.md §6.1 for the motivation.
+signal. See docs/results.md for why this mattered empirically.
 """
 from __future__ import annotations
 

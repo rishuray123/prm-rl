@@ -31,6 +31,9 @@ data/prm/
 .ipynb_checkpoints/
 .DS_Store
 
+# private ops / living notes — keep a local copy outside the public repo
+docs/knowledge-base.md
+
 # thesis draft & UT templates — kept locally, never committed
 thesis_draft/
 /Thesis 2022 templates/

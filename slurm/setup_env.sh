@@ -46,8 +46,7 @@ pip install "flash-attn>=2.6" --no-build-isolation || true
 # (see the printed instructions and slurm/_common.sh).
 cat > "$VENV/vista_env.sh" <<EOF
 # Cache-dir redirection: keep everything off of /home1 (23 GB quota).
-# Mirrors slurm/env_caches.sh — both should stay in sync. See
-# docs/knowledge-base.md §2.9.
+# Mirrors slurm/env_caches.sh — both should stay in sync.
 _prmrl_cache_root="\${SCRATCH}/prm-rl-caches"
 export HF_HOME="\${HF_HOME:-\${_prmrl_cache_root}/huggingface}"
 export HF_HUB_CACHE="\${HF_HUB_CACHE:-\${HF_HOME}/hub}"

@@ -3,7 +3,7 @@
 # Meant to be launched via slurm/phase2_sweep.sh which will fan out
 # 6 arms × 3 seeds → 18 sbatch jobs on the `gh` queue.
 #
-# Sizing (per §6.2 of the thesis / docs/knowledge-base.md):
+# Sizing (see docs/results.md for Phase 2 outcomes):
 #   * Policy:    Qwen2.5-7B-Instruct
 #   * Data:      n=2000 golden slice (data/golden_v2)
 #   * PRM:       outputs/prm_v2 (built with synthetic negatives; only

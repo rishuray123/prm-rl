@@ -19,4 +19,4 @@ num_generations: 4
 max_completion_length: 512
 temperature: 0.9
 top_p: 1.0
-beta: 0.04            # KL coefficient (Arm 7 turns this up)
+beta: 0.04            # KL coefficient to the reference policy

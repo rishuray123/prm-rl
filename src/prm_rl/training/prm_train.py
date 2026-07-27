@@ -83,7 +83,6 @@ def run_prm(cfg: DictConfig) -> str:
     # exceeds max_length — making positive/negative pairs (which
     # differ only at the tail) look identical to the model. Force
     # left-truncation so we always keep the discriminative step.
-    # See docs/knowledge-base.md §6.1.
     tokenizer.truncation_side = "left"
     model = AutoModelForSequenceClassification.from_pretrained(cfg.model.name, num_labels=2)
 

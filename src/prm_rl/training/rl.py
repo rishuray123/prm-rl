@@ -1,9 +1,8 @@
 """RL training via `trl.GRPOTrainer`.
 
 An "arm" is just a list of reward functions with weights + a set of GRPO
-hyperparameters (including the KL coefficient `beta` for Arm 7's
-regularization). No custom PPO loop lives here — everything routes
-through TRL.
+hyperparameters (including the KL coefficient `beta`). No custom PPO
+loop lives here — everything routes through TRL.
 """
 from __future__ import annotations
 
@@ -76,7 +75,7 @@ def run_rl(cfg: DictConfig) -> str:
         # prompts should be truncated in the dataset before it hits the
         # trainer if you need a hard cap.
         max_completion_length=cfg.training.get("max_completion_length", 512),
-        beta=cfg.training.get("beta", 0.04),  # KL coefficient (Arm 7)
+        beta=cfg.training.get("beta", 0.04),  # KL coefficient
         temperature=cfg.training.get("temperature", 0.9),
         top_p=cfg.training.get("top_p", 1.0),
         reward_weights=reward_weights,

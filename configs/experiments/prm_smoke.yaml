@@ -7,7 +7,7 @@
 # arms 2/3/4/6 rewards won't meaningfully differentiate completions.
 # For real training swap in strategy='teacher' or 'verifier' in
 # scripts/build_golden.py once an oracle model is available.
-# See docs/knowledge-base.md §6.4.
+# For real training use prm_v2.yaml (synthetic negatives).
 
 seed: 42
 run_name: prm_smoke

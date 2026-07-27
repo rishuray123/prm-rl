@@ -28,8 +28,7 @@
 #                          # partial iter failure still yields useful
 #                          # arm 1/4/6 phase2 data overnight.
 #
-# See docs/knowledge-base.md §6.2 for the Phase 2 plan and §2.8 for
-# the cache-directory setup.
+# Results summary: docs/results.md. Cache dirs: slurm/env_caches.sh.
 
 set -euo pipefail
 

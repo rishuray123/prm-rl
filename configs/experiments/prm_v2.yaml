@@ -1,11 +1,10 @@
 # PRM v2 — the first PRM trained with synthetic negatives.
 #
-# Motivation: the smoke PRM (see prm_smoke.yaml and docs/knowledge-base.md
-# §6.1) was trained with `strategy='gsm8k_native'`, which only labels
-# positive steps. That gives the classifier no gradient signal and it
-# collapses to `p ≈ 1.0` for every step. Arms 2/3/4/6 then receive a
-# nearly-uniform process reward and cannot meaningfully differentiate
-# completions.
+# Motivation: the smoke PRM (see prm_smoke.yaml) was trained with
+# `strategy='gsm8k_native'`, which only labels positive steps. That
+# gives the classifier no gradient signal and it collapses to
+# `p ≈ 1.0` for every step. Arms 2/3/4/6 then receive a nearly-uniform
+# process reward and cannot meaningfully differentiate completions.
 #
 # This config trains a bigger DeBERTa-v3-base PRM on a larger golden
 # slice, with the synthetic-negative pipeline enabled at

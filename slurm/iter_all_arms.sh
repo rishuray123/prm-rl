@@ -6,7 +6,7 @@
 # 2 h wall cap for fast iteration without waiting in the gh queue.
 #
 # Usage (from repo root, with venv activated, modules loaded — see
-# docs/knowledge-base.md §2.2):
+# slurm/README.md):
 #
 #     bash slurm/iter_all_arms.sh
 #

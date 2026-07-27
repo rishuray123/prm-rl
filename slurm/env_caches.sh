@@ -12,7 +12,7 @@
 # Idempotent: safe to source multiple times. Creates the target
 # directories if they don't exist.
 #
-# See docs/knowledge-base.md §2.1 (filesystem layout) and §2.8 (this fix).
+# Keep HF / Triton / pip caches under $SCRATCH (home quota is tight).
 
 if [[ -z "${SCRATCH:-}" ]]; then
     echo "WARN [env_caches.sh]: \$SCRATCH is empty; cache redirection skipped." >&2

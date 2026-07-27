@@ -2,7 +2,7 @@
 # End-to-end SMOKE test of all six arms + PRM on a single GH200 node.
 #
 # Usage (from repo root, on a compute node with venv already activated
-# and Vista modules loaded — see docs/knowledge-base.md §2.2):
+# and Vista modules loaded — see slurm/README.md):
 #
 #     bash slurm/smoke_all_arms.sh
 #
@@ -24,18 +24,18 @@
 # plumbing smoke test but means Arms 2/3/4/6 process rewards won't
 # meaningfully differentiate completions — cross-arm numbers below are
 # for pipeline validation only, not scientific comparison.
-# See docs/knowledge-base.md §6.4.
+# For scientific comparison use prm_v2 + docs/results.md.
 
 set -euo pipefail
 
 if ! command -v python >/dev/null; then
     echo "ERROR: no python on PATH. Did you activate the venv?" >&2
-    echo "       See docs/knowledge-base.md §2.2 for the correct order." >&2
+    echo "       See slurm/README.md for the correct module + venv order." >&2
     exit 1
 fi
 if [[ -z "${VIRTUAL_ENV:-}" ]]; then
     echo "WARN: VIRTUAL_ENV is not set. If pip/python target the system Python," >&2
-    echo "      abort now — this is the trap documented in KB §2.2." >&2
+    echo "      abort now — load modules before activating the venv." >&2
 fi
 
 # Redirect HF / Triton / pip / matplotlib caches to $SCRATCH (KB §2.9).

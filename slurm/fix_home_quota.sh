@@ -15,7 +15,7 @@
 # so newly-written cache entries go to $SCRATCH directly instead of
 # through the symlink.
 #
-# See docs/knowledge-base.md §2.9 for background.
+# Background: Vista /home1 quota is small; caches must live on $SCRATCH.
 
 set -euo pipefail
 

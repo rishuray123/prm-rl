@@ -5,14 +5,13 @@
 Experimental framework for investigating **reward hacking in process-based RL** for
 math reasoning, built on top of Hugging Face `transformers`, `datasets`, and `trl`.
 
-The goal is to keep the framework *thin*: every experimental "arm" from the research
-plan reduces to a different combination of reward functions plugged into
-`trl.GRPOTrainer`, and everything else (SFT, PRM training, evaluation) uses stock TRL /
-HF `Trainer` APIs.
+The goal is to keep the framework *thin*: every experimental "arm" reduces to a
+different combination of reward functions plugged into `trl.GRPOTrainer`, and
+everything else (SFT, PRM training, evaluation) uses stock TRL / HF `Trainer`
+APIs.
 
-> **New here?** Read [`docs/knowledge-base.md`](docs/knowledge-base.md) first — it's
-> a living doc of every non-obvious codebase convention, TACC Vista gotcha, version
-> pin, and past session summary. Grep it before debugging.
+Results from the completed evaluation ladder (1.5B iteration + 7B × 3-seed
+sweep) are summarized in [`docs/results.md`](docs/results.md).
 
 ## What lives where
 
@@ -22,7 +21,7 @@ prm_rl/
 ├── configs/
 │   ├── models/*.yaml                   # Model presets (tiny → 7B)
 │   ├── training/{sft,prm,rl_base}.yaml # Trainer hyperparams
-│   └── experiments/arm{1..7}.yaml      # One YAML per experimental arm
+│   └── experiments/arm{1..6}_*.yaml    # One YAML family per experimental arm
 ├── src/prm_rl/
 │   ├── data/     # GSM8K, golden dataset, PRM dataset builders
 │   ├── models/   # Thin wrappers around AutoModel*, PRM loader, NLI loader
@@ -42,16 +41,13 @@ prm_rl/
 | ------------------------------------- | --------------------------------------------------------- |
 | Stage 1 SFT                           | `scripts/train_sft.py`  → `trl.SFTTrainer`                |
 | PRM training on golden dataset        | `scripts/train_prm.py`  → `trl.RewardTrainer`             |
-| Stage 2 RL                            | `scripts/train_rl.py`   → `trl.GRPOTrainer` (+ PPO opt.)  |
+| Stage 2 RL                            | `scripts/train_rl.py`   → `trl.GRPOTrainer`               |
 | Arm 1  Outcome-based reward           | `rewards/outcome.py`                                      |
 | Arm 2  Naive process reward           | `rewards/process.py`                                      |
 | Arm 3  Prefix-consistency reward      | `rewards/prefix.py`                                       |
 | Arm 4  Contradiction-aware reward     | `rewards/contradiction.py` (uses an NLI model)            |
 | Arm 5  Counterfactual reward          | `rewards/counterfactual.py`                               |
 | Arm 6  Hybrid process+outcome         | `rewards/hybrid.py` (PROGRS-style outcome-cond. centering)|
-| Arm 7  Regularized (KL to SFT)        | GRPO `beta` in `configs/experiments/arm7_*.yaml`          |
-| Arm 8  Adversarial co-training        | `training/adversarial.py` (loop that alternates PRM+policy)|
-| Arm 9  VinePPO                        | `training/vineppo.py` (Monte-Carlo value estimates)       |
 | Trap scenarios                        | `data/traps/*.json` + `evaluation/traps.py`               |
 | Faithfulness (CCT / Phi-CCT)          | `evaluation/faithfulness.py`                              |
 | Causal Mediation Analysis             | `evaluation/cma.py`                                       |
@@ -97,10 +93,9 @@ See `slurm/README.md` for interactive dev (`idev -p gh-dev`) and multi-arm sweep
 * We treat GRPO (DeepSeek-style) as the default RL algorithm because it accepts
   a *list of Python reward callables with weights* natively — which is the
   cleanest possible mapping onto our "different rewards per arm" experimental
-  design. PPO is available for Arm 9 / VinePPO variants that need a value
-  network.
-* KL regularization (Arm 7) is *already* a first-class feature of GRPO/PPO —
-  we just expose `beta` in the arm's YAML and don't wrap the reward.
+  design.
+* KL regularization is a first-class feature of GRPO — expose `beta` in the
+  training YAML; no separate reward wrapper is needed.
 * Step-level rewards are aggregated to a single scalar per completion at the
   reward function boundary. We keep the aggregator explicit
   (`sum`, `sum_until_first_error`, `mean`, `outcome_conditioned_mean`, …)
